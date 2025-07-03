@@ -60,9 +60,7 @@ I remember the last few messages in our conversation for context. If you want to
 
     // Process the query with Gemini
     try {
-        // --- PROBLEM LINE REMOVED ---
-        // The 'sendTyping' indicator is removed to guarantee the build passes.
-        // await message.channel.sendTyping(); 
+        await message.channel.sendTyping(); 
 
         const history = ConversationService.getHistory(message.channel.id);
         const responseText = await GeminiService.generateResponse(history, query);
