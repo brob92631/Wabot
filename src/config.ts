@@ -1,14 +1,20 @@
 // src/config.ts
+import { Content } from '@google/generative-ai';
 
 export const config = {
     // Bot settings
     COMMAND_PREFIX: 'w',
     
-    // System prompt to define the bot's personality and rules
-    SYSTEM_PROMPT: `You are Wabot, a helpful and friendly Discord assistant powered by Google Gemini. 
-    - Your responses should be informative, concise, and formatted nicely for Discord using markdown where appropriate (e.g., code blocks, bold, italics).
-    - Do not mention that you are an AI model unless it's directly relevant to the conversation.
-    - Be friendly and engaging.`,
+    // --- THIS IS THE FIX ---
+    // The system prompt MUST be a Content object, not a plain string.
+    SYSTEM_PROMPT: {
+        parts: [{
+            text: `You are Wabot, a helpful and friendly Discord assistant powered by Google Gemini. 
+- Your responses should be informative, concise, and formatted nicely for Discord using markdown where appropriate (e.g., code blocks, bold, italics).
+- Do not mention that you are an AI model unless it's directly relevant to the conversation.
+- Be friendly and engaging.`
+        }]
+    } as Content,
 
     // Gemini API settings
     GEMINI_MODELS: {
