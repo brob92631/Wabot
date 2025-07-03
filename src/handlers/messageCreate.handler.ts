@@ -5,6 +5,10 @@ import { config } from '../config';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
 
+// Track recently processed messages to prevent duplicates
+const processedMessages = new Set<string>();
+const MESSAGE_CACHE_DURATION = 5000; // 5 seconds
+
 /**
  * Handles the logic for incoming messages.
  * @param message The Discord message object.
@@ -17,6 +21,19 @@ export async function handleMessageCreate(message: Message) {
     if (!message.channel.isTextBased()) {
         return;
     }
+
+    // Prevent duplicate processing of the same message
+    const messageKey = `${message.id}-${message.author.id}`;
+    if (processedMessages.has(messageKey)) {
+        console.log(`Ignoring duplicate message: ${messageKey}`);
+        return;
+    }
+    
+    // Add to processed messages and clean up after delay
+    processedMessages.add(messageKey);
+    setTimeout(() => {
+        processedMessages.delete(messageKey);
+    }, MESSAGE_CACHE_DURATION);
 
     const isMentioned = message.mentions.has(message.client.user!.id);
     const startsWithPrefix = message.content.startsWith(config.COMMAND_PREFIX + ' ');
