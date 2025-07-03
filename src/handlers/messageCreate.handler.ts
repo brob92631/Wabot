@@ -1,6 +1,6 @@
 // src/handlers/messageCreate.handler.ts
 
-import { Message, TextBasedChannel } from 'discord.js'; // Import TextBasedChannel
+import { Message } from 'discord.js'; // Removed TextBasedChannel import as it's no longer strictly needed for this specific check
 import { config } from '../config';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
@@ -189,9 +189,9 @@ I remember the last few messages in our conversation for context. If you want to
 
     if (queryLower.startsWith('summarize ') && urlsInQuery && urlsInQuery.length > 0) {
         const url = urlsInQuery[0];
-        // Ensure sendTyping is called on a TextBasedChannel
-        if (message.channel.isTextBased()) {
-            await (message.channel as TextBasedChannel).sendTyping();
+        // Only send typing if the channel supports it
+        if ('sendTyping' in message.channel) {
+            await message.channel.sendTyping();
         }
         const content = await WebScrapingService.fetchAndExtractText(url);
         if (content) {
@@ -205,9 +205,9 @@ I remember the last few messages in our conversation for context. If you want to
 
     if (queryLower.startsWith('extract ') && urlsInQuery && urlsInQuery.length > 0) {
         const url = urlsInQuery[0];
-        // Ensure sendTyping is called on a TextBasedChannel
-        if (message.channel.isTextBased()) {
-            await (message.channel as TextBasedChannel).sendTyping();
+        // Only send typing if the channel supports it
+        if ('sendTyping' in message.channel) {
+            await message.channel.sendTyping();
         }
         const content = await WebScrapingService.fetchAndExtractText(url);
         if (content) {
@@ -233,9 +233,9 @@ I remember the last few messages in our conversation for context. If you want to
  */
 async function processGeminiQuery(message: Message, prompt: string, originalQuery: string) {
     try {
-        // Only send typing if the channel supports it and is a TextBasedChannel
-        if (message.channel.isTextBased()) {
-            await (message.channel as TextBasedChannel).sendTyping();
+        // Only send typing if the channel supports it
+        if ('sendTyping' in message.channel) {
+            await message.channel.sendTyping();
         } 
 
         const history = ConversationService.getHistory(message.channel.id);
