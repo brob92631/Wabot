@@ -1,6 +1,8 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { generateText } from 'ai'; // <--- ADD THIS LINE: Import generateText from 'ai'
 import dotenv from 'dotenv';
+import http from 'http';
 
 // Load environment variables from .env file (for local development)
 dotenv.config();
@@ -22,21 +24,23 @@ if (!OPENROUTER_API_KEY) {
 }
 
 // Initialize Discord Client with necessary intents
-// MessageContent intent is crucial for the bot to read message content [1, 2, 3]
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,         // Required for guild-related events
-        GatewayIntentBits.GuildMessages,  // Required to receive messages in guilds
-        GatewayIntentBits.MessageContent, // REQUIRED to read the content of messages [1, 2, 3]
-        GatewayIntentBits.DirectMessages, // To allow the bot to respond in DMs
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.DirectMessages,
     ],
-    partials: [Partials.Channel], // Required for handling DMs
+    partials: [Partials.Channel],
 });
 
 // Initialize OpenRouter with your API key
 const openrouter = createOpenRouter({
     apiKey: OPENROUTER_API_KEY,
 });
+
+// Define the chat model instance once
+const deepseekChatModel = openrouter.chat('deepseek/deepseek-v3:free'); // <--- ADD THIS LINE: Get the chat model instance
 
 // Event: Bot is ready and online
 client.once('ready', () => {
@@ -63,13 +67,11 @@ client.on('messageCreate', async message => {
             // Indicate that the bot is "typing" in the channel
             await message.channel.sendTyping();
 
-            // Make a request to DeepSeek via OpenRouter
-            const response = await openrouter('deepseek/deepseek-v3:free').chat({
-                messages: [{ role: 'user', content: query }]
+            // Make a request to DeepSeek via OpenRouter using generateText
+            const { text: aiResponse } = await generateText({ // <--- MODIFIED LINE
+                model: deepseekChatModel, // <--- Use the chat model instance here
+                messages: [{ role: 'user', content: query }],
             });
-
-            // Get the AI's response content
-            const aiResponse = response.choices[0]?.message?.content;
 
             if (aiResponse) {
                 // Discord has a 2000 character limit per message.
@@ -91,6 +93,15 @@ client.on('messageCreate', async message => {
 
 // Event: Log any Discord client errors
 client.on('error', console.error);
+
+// Start a simple HTTP server to keep the Repl alive
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Warbot is alive!');
+}).listen(PORT, () => {
+    console.log(`HTTP server listening on port ${PORT}`);
+});
 
 // Log in to Discord with your bot token
 client.login(DISCORD_BOT_TOKEN);
