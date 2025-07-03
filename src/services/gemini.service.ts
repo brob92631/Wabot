@@ -1,6 +1,6 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai'; // Added FunctionDeclarationSchemaType, Tool
 import { config } from '../config';
 import { UserProfile } from './userProfile.service'; // Import UserProfile interface
 
@@ -18,10 +18,10 @@ const availableTools: FunctionDeclaration[] = [
         name: 'get_current_time',
         description: 'Gets the current time for a specified timezone.',
         parameters: {
-            type: 'object',
+            type: FunctionDeclarationSchemaType.OBJECT, // Fixed: Use enum value
             properties: {
                 timezone: {
-                    type: 'string',
+                    type: FunctionDeclarationSchemaType.STRING, // Fixed: Use enum value
                     description: 'The timezone to get the current time for, e.g., "America/New_York", "Europe/London".'
                 }
             },
@@ -33,10 +33,10 @@ const availableTools: FunctionDeclaration[] = [
     //     name: 'search_web',
     //     description: 'Searches the web for a given query.',
     //     parameters: {
-    //         type: 'object',
+    //         type: FunctionDeclarationSchemaType.OBJECT,
     //         properties: {
     //             query: {
-    //                 type: 'string',
+    //                 type: FunctionDeclarationSchemaType.STRING,
     //                 description: 'The search query.'
     //             }
     //         },
@@ -215,7 +215,7 @@ export async function generateResponse(history: Content[], query: string, userPr
             }
         }
         
-        const systemInstructionContent: Content = { parts: [{ text: currentSystemInstruction }] };
+        const systemInstructionContent: Content = { role: 'system', parts: [{ text: currentSystemInstruction }] }; // Fixed: Added role
 
         const chat = model.startChat({
             history,
@@ -226,7 +226,7 @@ export async function generateResponse(history: Content[], query: string, userPr
                 topK: 40,
             },
             systemInstruction: systemInstructionContent, // Use dynamic system instruction
-            tools: availableTools, // Provide tools to the model
+            tools: availableTools as Tool[], // Fixed: Explicitly cast to Tool[]
         });
 
         const result = await chat.sendMessageStream(query);
@@ -236,7 +236,7 @@ export async function generateResponse(history: Content[], query: string, userPr
 
         for await (const chunk of result.stream) {
             // Handle tool calls
-            const call = chunk.functionCall;
+            const call = chunk.functionCall(); // Fixed: Call the functionCall method
             if (call) {
                 toolCallDetected = true;
                 console.log(`Gemini requested tool call: ${call.name} with args:`, call.args);
@@ -252,10 +252,8 @@ export async function generateResponse(history: Content[], query: string, userPr
                             },
                         },
                     ]);
-                    // Collect the stream from the tool response
-                    for await (const toolResponseChunk of toolResponseResult.stream) {
-                        fullResponse += toolResponseChunk.text();
-                    }
+                    // Collect the text from the non-streaming tool response
+                    fullResponse += toolResponseResult.response.text(); // Fixed: Access text directly
                     break; // Exit loop after handling tool call and getting response
                 } catch (toolError) {
                     console.error('Error executing tool:', toolError);
