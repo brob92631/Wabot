@@ -22,8 +22,8 @@ export const config = {
     // Gemini API settings
     GEMINI_MODELS: {
         // Use latest models for best performance
-        flash: 'gemini-1.5-flash-latest', // Updated to latest for better performance
-        pro: 'gemini-1.5-pro-latest',
+        flash: 'gemini-2.5-flash', // Updated to latest for better performance
+        pro: 'gemini-2.5-pro',
     },
 
     // Conversation memory settings
