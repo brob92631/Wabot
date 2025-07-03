@@ -12,7 +12,6 @@ const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
 /**
  * Defines the available tools (functions) that Gemini can call.
- * THIS IS THE FIX: The API expects a Tool object containing a functionDeclarations array.
  */
 const tools: Tool[] = [
     {
@@ -31,7 +30,6 @@ const tools: Tool[] = [
                     required: ['timezone']
                 }
             },
-            // You can add other function declarations here inside this array
         ]
     }
 ];
@@ -39,10 +37,6 @@ const tools: Tool[] = [
 
 /**
  * Executes a tool call and returns the result.
- * This is a placeholder for actual tool implementations.
- * @param functionName The name of the function to call.
- * @param args The arguments for the function.
- * @returns The result of the function call.
  */
 async function callTool(functionName: string, args: any): Promise<any> {
     switch (functionName) {
@@ -65,10 +59,6 @@ async function callTool(functionName: string, args: any): Promise<any> {
                 console.error(`Invalid timezone for get_current_time: ${args.timezone}`, e);
                 return { error: `Invalid timezone: ${args.timezone}` };
             }
-        // case 'search_web':
-        //     // Implement actual web search here using an external API or a custom scraper
-        //     console.log(`Simulating web search for: ${args.query}`);
-        //     return { results: [`Simulated search result for "${args.query}"`] };
         default:
             throw new Error(`Unknown function: ${functionName}`);
     }
@@ -76,9 +66,6 @@ async function callTool(functionName: string, args: any): Promise<any> {
 
 /**
  * Analyzes the user's query to determine if it requires the advanced model.
- * Uses keyword-based analysis for reliability and speed.
- * @param query The user's query.
- * @returns 'pro' if complex, 'flash' if simple.
  */
 function getModelForQuery(query: string): 'pro' | 'flash' {
     const queryLower = query.toLowerCase();
@@ -125,8 +112,6 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
 
 /**
  * Summarizes text that is too long for a Discord message.
- * @param text The text to summarize.
- * @returns A summarized version of the text.
  */
 async function summarizeText(text: string): Promise<string> {
     console.log(`Response is ${text.length} characters, attempting to summarize...`);
@@ -138,23 +123,18 @@ async function summarizeText(text: string): Promise<string> {
         const summary = result.response.text().trim();
         
         if (summary.length > config.MAX_RESPONSE_LENGTH) {
-            // If summarization still too long, truncate intelligently
             return truncateAtSentence(summary, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response truncated)*';
         }
         
         return summary;
     } catch (error) {
         console.error('Error summarizing text:', error);
-        // Fallback to intelligent truncation
         return truncateAtSentence(text, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response truncated)*';
     }
 }
 
 /**
  * Truncates text at the last complete sentence within the limit.
- * @param text The text to truncate.
- * @param maxLength The maximum length.
- * @returns The truncated text.
  */
 function truncateAtSentence(text: string, maxLength: number): string {
     if (text.length <= maxLength) {
@@ -173,17 +153,12 @@ function truncateAtSentence(text: string, maxLength: number): string {
         return truncated.slice(0, lastSentenceEnd + 1);
     }
     
-    // If no good sentence break found, truncate at last space
     const lastSpace = truncated.lastIndexOf(' ');
     return lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated;
 }
 
 /**
  * Generates a response from Gemini based on the conversation history and a new query.
- * @param history The conversation history.
- * @param query The new user query.
- * @param userProfile The user's profile data (tone, persona, custom memories).
- * @returns The generated text response.
  */
 export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
     try {
@@ -218,7 +193,7 @@ export async function generateResponse(history: Content[], query: string, userPr
                 topK: 40,
             },
             systemInstruction: systemInstructionContent,
-            tools: tools, // Fixed: Use the correctly structured tools object
+            tools: tools,
         });
 
         const result = await chat.sendMessageStream(query);
@@ -227,9 +202,13 @@ export async function generateResponse(history: Content[], query: string, userPr
         let toolCallDetected = false;
 
         for await (const chunk of result.stream) {
-            // Handle tool calls
-            const call = chunk.functionCall();
-            if (call) {
+            // ---- THIS IS THE FIX ----
+            // Use the recommended functionCalls() which returns an array.
+            const calls = chunk.functionCalls();
+            if (calls && calls.length > 0) {
+                // For simplicity, we'll process the first call.
+                // A more robust implementation might handle multiple parallel calls.
+                const call = calls[0];
                 toolCallDetected = true;
                 console.log(`Gemini requested tool call: ${call.name} with args:`, call.args);
                 try {
@@ -253,10 +232,10 @@ export async function generateResponse(history: Content[], query: string, userPr
                     break;
                 }
             } else {
+                // If there's no function call, just append the text.
                 const chunkText = chunk.text();
                 fullResponse += chunkText;
                 
-                // Early termination if response is getting too long
                 if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 2) {
                     console.log('Response getting too long, stopping stream early');
                     break;
@@ -264,14 +243,11 @@ export async function generateResponse(history: Content[], query: string, userPr
             }
         }
 
-        // If no tool call was detected, but the response is still empty after streaming
         if (!toolCallDetected && (!fullResponse || fullResponse.trim().length < 5)) {
             console.warn('Generated response is empty or too short');
             return "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
         }
 
-        // If a tool call was handled, the fullResponse is already populated.
-        // If not, we check the length of the directly streamed response.
         if (fullResponse.length > config.MAX_RESPONSE_LENGTH) {
             console.log(`Response too long (${fullResponse.length} chars), summarizing...`);
             return await summarizeText(fullResponse);
@@ -282,7 +258,6 @@ export async function generateResponse(history: Content[], query: string, userPr
     } catch (error) {
         console.error('Error generating response:', error);
         
-        // More specific error handling
         if (error instanceof Error) {
             if (error.message.includes('quota') || error.message.includes('rate limit')) {
                 return "I'm experiencing high usage right now. Please try again in a moment.";
