@@ -1,6 +1,6 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, GenerateContentStreamResult } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content } from '@google/generative-ai';
 import { config } from '../config';
 
 // Initialize the main Gemini client
@@ -11,22 +11,45 @@ const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
 /**
  * Analyzes the user's query to determine if it requires the advanced model.
+ * Uses keyword-based analysis for reliability and speed.
  * @param query The user's query.
  * @returns 'pro' if complex, 'flash' if simple.
  */
-async function getModelForQuery(query: string): Promise<'pro' | 'flash'> {
-    try {
-        const prompt = `Analyze the following user query. Is it a simple question that can be answered conversationally, or is it a complex request that requires deep reasoning, multi-step thinking, or code generation? Respond with only the word "flash" for a simple query or "pro" for a complex one.\n\nQuery: "${query}"`;
-        
-        const result = await flashModel.generateContent(prompt);
-        const choice = result.response.text().trim().toLowerCase();
+function getModelForQuery(query: string): 'pro' | 'flash' {
+    const queryLower = query.toLowerCase();
+    
+    // Complex query indicators
+    const complexKeywords = [
+        'code', 'program', 'function', 'algorithm', 'debug', 'error', 'fix',
+        'explain', 'analyze', 'compare', 'research', 'study', 'thesis',
+        'calculate', 'math', 'formula', 'equation', 'solve',
+        'step by step', 'detailed', 'comprehensive', 'thorough',
+        'complex', 'advanced', 'technical', 'implementation',
+        'design', 'architecture', 'structure', 'system',
+        'pros and cons', 'advantages', 'disadvantages',
+        'strategy', 'plan', 'approach', 'methodology'
+    ];
 
-        console.log(`Model selection analysis for query "${query}": Chose "${choice}"`);
-        return choice === 'pro' ? 'pro' : 'flash';
-    } catch (error) {
-        console.error('Error in model selection, defaulting to flash:', error);
-        return 'flash'; // Default to the faster model in case of an error
+    // Programming language keywords
+    const programmingKeywords = [
+        'javascript', 'python', 'java', 'c++', 'html', 'css', 'sql',
+        'react', 'node', 'typescript', 'php', 'ruby', 'go', 'rust',
+        'api', 'database', 'server', 'client', 'framework'
+    ];
+
+    // Check for complex indicators
+    const hasComplexKeywords = complexKeywords.some(keyword => queryLower.includes(keyword));
+    const hasProgrammingKeywords = programmingKeywords.some(keyword => queryLower.includes(keyword));
+    const isLongQuery = query.length > 200;
+    const hasMultipleQuestions = (query.match(/\?/g) || []).length > 1;
+
+    if (hasComplexKeywords || hasProgrammingKeywords || isLongQuery || hasMultipleQuestions) {
+        console.log(`Using PRO model for complex query: "${query.slice(0, 100)}..."`);
+        return 'pro';
     }
+
+    console.log(`Using FLASH model for simple query: "${query.slice(0, 100)}..."`);
+    return 'flash';
 }
 
 /**
@@ -35,17 +58,53 @@ async function getModelForQuery(query: string): Promise<'pro' | 'flash'> {
  * @returns A summarized version of the text.
  */
 async function summarizeText(text: string): Promise<string> {
-    console.log('Response is too long, attempting to summarize...');
+    console.log(`Response is ${text.length} characters, attempting to summarize...`);
+    
     try {
-        const prompt = `The following text is too long for a Discord message. Please summarize it concisely, keeping the core meaning and important information. The summary must be under ${config.MAX_RESPONSE_LENGTH} characters.\n\nText to summarize:\n---\n${text}`;
+        const prompt = `Please create a concise summary of the following text. Keep all important information but make it shorter for Discord (under ${config.MAX_RESPONSE_LENGTH - 100} characters). Maintain the same tone and include key points:\n\n${text}`;
         
         const result = await flashModel.generateContent(prompt);
-        return result.response.text();
+        const summary = result.response.text().trim();
+        
+        if (summary.length > config.MAX_RESPONSE_LENGTH) {
+            // If summarization still too long, truncate intelligently
+            return truncateAtSentence(summary, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response truncated)*';
+        }
+        
+        return summary;
     } catch (error) {
         console.error('Error summarizing text:', error);
-        // Fallback to truncating if summarization fails
-        return text.slice(0, config.MAX_RESPONSE_LENGTH - 10) + '... (truncated)';
+        // Fallback to intelligent truncation
+        return truncateAtSentence(text, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response truncated)*';
     }
+}
+
+/**
+ * Truncates text at the last complete sentence within the limit.
+ * @param text The text to truncate.
+ * @param maxLength The maximum length.
+ * @returns The truncated text.
+ */
+function truncateAtSentence(text: string, maxLength: number): string {
+    if (text.length <= maxLength) {
+        return text;
+    }
+    
+    const truncated = text.slice(0, maxLength);
+    const lastSentenceEnd = Math.max(
+        truncated.lastIndexOf('.'),
+        truncated.lastIndexOf('!'),
+        truncated.lastIndexOf('?'),
+        truncated.lastIndexOf('\n')
+    );
+    
+    if (lastSentenceEnd > maxLength * 0.5) {
+        return truncated.slice(0, lastSentenceEnd + 1);
+    }
+    
+    // If no good sentence break found, truncate at last space
+    const lastSpace = truncated.lastIndexOf(' ');
+    return lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated;
 }
 
 /**
@@ -55,29 +114,65 @@ async function summarizeText(text: string): Promise<string> {
  * @returns The generated text response.
  */
 export async function generateResponse(history: Content[], query: string): Promise<string> {
-    const modelType = await getModelForQuery(query);
-    const model = modelType === 'pro' ? proModel : flashModel;
+    try {
+        const modelType = getModelForQuery(query);
+        const model = modelType === 'pro' ? proModel : flashModel;
 
-    console.log(`Using ${modelType.toUpperCase()} model for this request.`);
+        console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
 
-    const chat = model.startChat({
-        history,
-        generationConfig: {
-            maxOutputTokens: 2000, // Limit output tokens to prevent overly long initial responses
-        },
-        systemInstruction: config.SYSTEM_PROMPT,
-    });
+        const chat = model.startChat({
+            history,
+            generationConfig: {
+                maxOutputTokens: modelType === 'pro' ? 4000 : 2000,
+                temperature: 0.7,
+                topP: 0.9,
+                topK: 40,
+            },
+            systemInstruction: config.SYSTEM_PROMPT,
+        });
 
-    const result = await chat.sendMessageStream(query);
-    
-    let fullResponse = '';
-    for await (const chunk of result.stream) {
-        fullResponse += chunk.text();
+        const result = await chat.sendMessageStream(query);
+        
+        let fullResponse = '';
+        for await (const chunk of result.stream) {
+            const chunkText = chunk.text();
+            fullResponse += chunkText;
+            
+            // Early termination if response is getting too long
+            if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 2) {
+                console.log('Response getting too long, stopping stream early');
+                break;
+            }
+        }
+
+        // Handle empty or very short responses
+        if (!fullResponse || fullResponse.trim().length < 5) {
+            console.warn('Generated response is empty or too short');
+            return "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
+        }
+
+        // Handle overly long responses
+        if (fullResponse.length > config.MAX_RESPONSE_LENGTH) {
+            console.log(`Response too long (${fullResponse.length} chars), summarizing...`);
+            return await summarizeText(fullResponse);
+        }
+
+        return fullResponse.trim();
+        
+    } catch (error) {
+        console.error('Error generating response:', error);
+        
+        // More specific error handling
+        if (error instanceof Error) {
+            if (error.message.includes('quota') || error.message.includes('rate limit')) {
+                return "I'm experiencing high usage right now. Please try again in a moment.";
+            } else if (error.message.includes('safety')) {
+                return "I can't provide a response to that request. Please try asking something else.";
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                return "I'm having trouble connecting to my AI service. Please try again.";
+            }
+        }
+        
+        return "Sorry, I encountered an error while generating a response. Please try again.";
     }
-
-    if (fullResponse.length > config.MAX_RESPONSE_LENGTH) {
-        return await summarizeText(fullResponse);
-    }
-
-    return fullResponse;
 }
