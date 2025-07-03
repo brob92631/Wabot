@@ -4,6 +4,7 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import dotenv from 'dotenv';
 import http from 'http';
 import { handleMessageCreate } from './handlers/messageCreate.handler';
+import { initializeUserProfileDB } from './services/userProfile.service'; // Import the new service
 
 // Load environment variables from .env file
 dotenv.config();
@@ -28,9 +29,10 @@ const client = new Client({
 });
 
 // --- Client Event Handlers ---
-client.once('ready', () => {
+client.once('ready', async () => { // Make this async to await DB initialization
     console.log(`Wabot is online! Logged in as ${client.user?.tag}`);
     console.log(`Ready to serve in ${client.guilds.cache.size} servers.`);
+    await initializeUserProfileDB(); // Initialize the user profile database
 });
 
 // Delegate message handling to the specialized handler
