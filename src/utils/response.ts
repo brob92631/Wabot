@@ -1,12 +1,12 @@
 // src/utils/response.ts
 
-import { EmbedBuilder, Message } from 'discord.js';
+import { EmbedBuilder, Message, Colors, MessagePayload, MessageReplyOptions } from 'discord.js';
 import { config } from '../config';
 
 /**
  * Creates a standard, styled embed.
  */
-const createBaseEmbed = () => new EmbedBuilder().setColor(config.EMBED_COLOR);
+const createBaseEmbed = () => new EmbedBuilder().setColor(Colors.Blurple); // FIX: Use the type-safe Colors.Blurple
 
 /**
  * Creates an embed for a standard response.
@@ -21,7 +21,7 @@ export const createResponseEmbed = (description: string) =>
  */
 export const createSuccessEmbed = (description: string) =>
     createBaseEmbed()
-        .setColor('#57F287') // Green
+        .setColor(Colors.Green) // FIX: Use type-safe Colors.Green
         .setDescription(`✅ ${description}`);
 
 /**
@@ -30,7 +30,7 @@ export const createSuccessEmbed = (description: string) =>
  */
 export const createErrorEmbed = (description:string) =>
     createBaseEmbed()
-        .setColor('#ED4245') // Red
+        .setColor(Colors.Red) // FIX: Use type-safe Colors.Red
         .setTitle('Oops! Something went wrong.')
         .setDescription(`❌ ${description}`);
 
@@ -56,7 +56,7 @@ export const createHelpEmbed = () => {
             { name: '👤 User Profile', value: `
 - \`${prefix} remember <key>=<value>\`: I'll remember a piece of info about you.
 - \`${prefix} forget <key|all>\`: I'll forget a piece of info or everything.
-- \`${prefix} show my-data\`: Shows what I remember about you.
+- \`${prefix} show-my-data\`: Shows what I remember about you.
 - \`${prefix} set-tone <tone>\`: Sets my tone (e.g., \`humorous\`).
 - \`${prefix} set-persona <persona>\`: Sets my persona (e.g., \`pirate\`).
             ` },
@@ -76,6 +76,13 @@ export const createHelpEmbed = () => {
  * @param content The text content of the reply.
  */
 export async function smartReply(message: Message, content: string) {
+    // FIX: Add a type guard to ensure we are in a channel that can receive messages.
+    // This resolves the "Property 'send' does not exist" error.
+    if (!message.channel || !message.channel.isTextBased()) {
+        console.error("Cannot send message in a non-text-based channel.");
+        return;
+    }
+    
     const trimmedContent = content.trim();
 
     if (!trimmedContent) {
@@ -83,19 +90,31 @@ export async function smartReply(message: Message, content: string) {
         return;
     }
 
-    // Use a simple embed for reasonably sized responses
+    // Use a simple embed for reasonably sized responses (under Discord's embed description limit)
     if (trimmedContent.length <= 4096) {
         await message.reply({ embeds: [createResponseEmbed(trimmedContent)] });
-    } else {
-        // For very long responses, split the message into chunks
-        // This is better for readability and for copying large code blocks
-        const chunks = trimmedContent.match(/[\s\S]{1,2000}/g) || [];
-        for (let i = 0; i < chunks.length; i++) {
+        return; // Exit after sending the embed
+    }
+    
+    // For very long responses, split the message into raw text chunks
+    // This is better for readability and for copying large code blocks
+    const chunks = trimmedContent.match(/[\s\S]{1,2000}/g) || [];
+
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]; // chunk is guaranteed to be a string here
+        try {
             if (i === 0) {
-                await message.reply(chunks[i]);
+                // Reply to the user with the first chunk
+                await message.reply(chunk);
             } else {
-                await message.channel.send(chunks[i]);
+                // Send subsequent chunks in the channel
+                await message.channel.send(chunk);
             }
+        } catch (error) {
+            console.error("Failed to send a message chunk:", error);
+            // If one chunk fails, send an error and stop to avoid spam
+            await message.channel.send({ embeds: [createErrorEmbed("I couldn't send the full response because it was too long or something went wrong.")] });
+            break;
         }
     }
 }
