@@ -21,6 +21,9 @@ export async function handleMessageCreate(message: Message) {
     const isMentioned = message.mentions.has(message.client.user!.id);
     const startsWithPrefix = message.content.startsWith(config.COMMAND_PREFIX + ' ');
 
+    // Debug logging
+    console.log(`Message: "${message.content}" | Mentioned: ${isMentioned} | Prefix: ${startsWithPrefix}`);
+
     // Ignore messages without the prefix or a mention
     if (!isMentioned && !startsWithPrefix) return;
 
@@ -30,9 +33,21 @@ export async function handleMessageCreate(message: Message) {
     if (isMentioned) {
         // If mentioned, remove the mention and use the rest as query
         query = message.content.replace(/<@!?\d+>/g, '').trim();
-    } else {
-        // If not mentioned but starts with prefix, remove prefix
+        // If the remaining content still has the prefix, remove it
+        if (query.startsWith(config.COMMAND_PREFIX + ' ')) {
+            query = query.slice(config.COMMAND_PREFIX.length + 1).trim();
+        }
+    } else if (startsWithPrefix) {
+        // Only if NOT mentioned, process prefix
         query = message.content.slice(config.COMMAND_PREFIX.length + 1).trim();
+    }
+
+    console.log(`Extracted query: "${query}"`);
+
+    // Prevent processing if we somehow got here without a valid trigger
+    if (!isMentioned && !startsWithPrefix) {
+        console.log('No valid trigger found, ignoring message');
+        return;
     }
 
     // If query is empty after processing, show help
