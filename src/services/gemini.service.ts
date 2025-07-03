@@ -1,8 +1,8 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai'; // Added FunctionDeclarationSchemaType, Tool
+import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai';
 import { config } from '../config';
-import { UserProfile } from './userProfile.service'; // Import UserProfile interface
+import { UserProfile } from './userProfile.service';
 
 // Initialize the main Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -12,38 +12,30 @@ const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
 /**
  * Defines the available tools (functions) that Gemini can call.
+ * THIS IS THE FIX: The API expects a Tool object containing a functionDeclarations array.
  */
-const availableTools: FunctionDeclaration[] = [
+const tools: Tool[] = [
     {
-        name: 'get_current_time',
-        description: 'Gets the current time for a specified timezone.',
-        parameters: {
-            type: FunctionDeclarationSchemaType.OBJECT, // Fixed: Use enum value
-            properties: {
-                timezone: {
-                    type: FunctionDeclarationSchemaType.STRING, // Fixed: Use enum value
-                    description: 'The timezone to get the current time for, e.g., "America/New_York", "Europe/London".'
+        functionDeclarations: [
+            {
+                name: 'get_current_time',
+                description: 'Gets the current time for a specified timezone.',
+                parameters: {
+                    type: FunctionDeclarationSchemaType.OBJECT,
+                    properties: {
+                        timezone: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            description: 'The timezone to get the current time for, e.g., "America/New_York", "Europe/London".'
+                        }
+                    },
+                    required: ['timezone']
                 }
             },
-            required: ['timezone']
-        }
-    },
-    // Add more tools here as needed, e.g., for searching the web, looking up definitions etc.
-    // {
-    //     name: 'search_web',
-    //     description: 'Searches the web for a given query.',
-    //     parameters: {
-    //         type: FunctionDeclarationSchemaType.OBJECT,
-    //         properties: {
-    //             query: {
-    //                 type: FunctionDeclarationSchemaType.STRING,
-    //                 description: 'The search query.'
-    //             }
-    //         },
-    //         required: ['query']
-    //     }
-    // }
+            // You can add other function declarations here inside this array
+        ]
+    }
 ];
+
 
 /**
  * Executes a tool call and returns the result.
@@ -215,7 +207,7 @@ export async function generateResponse(history: Content[], query: string, userPr
             }
         }
         
-        const systemInstructionContent: Content = { role: 'system', parts: [{ text: currentSystemInstruction }] }; // Fixed: Added role
+        const systemInstructionContent: Content = { role: 'system', parts: [{ text: currentSystemInstruction }] };
 
         const chat = model.startChat({
             history,
@@ -225,8 +217,8 @@ export async function generateResponse(history: Content[], query: string, userPr
                 topP: 0.9,
                 topK: 40,
             },
-            systemInstruction: systemInstructionContent, // Use dynamic system instruction
-            tools: availableTools as Tool[], // Fixed: Explicitly cast to Tool[]
+            systemInstruction: systemInstructionContent,
+            tools: tools, // Fixed: Use the correctly structured tools object
         });
 
         const result = await chat.sendMessageStream(query);
@@ -236,7 +228,7 @@ export async function generateResponse(history: Content[], query: string, userPr
 
         for await (const chunk of result.stream) {
             // Handle tool calls
-            const call = chunk.functionCall(); // Fixed: Call the functionCall method
+            const call = chunk.functionCall();
             if (call) {
                 toolCallDetected = true;
                 console.log(`Gemini requested tool call: ${call.name} with args:`, call.args);
@@ -253,7 +245,7 @@ export async function generateResponse(history: Content[], query: string, userPr
                         },
                     ]);
                     // Collect the text from the non-streaming tool response
-                    fullResponse += toolResponseResult.response.text(); // Fixed: Access text directly
+                    fullResponse += toolResponseResult.response.text();
                     break; // Exit loop after handling tool call and getting response
                 } catch (toolError) {
                     console.error('Error executing tool:', toolError);
