@@ -12,7 +12,7 @@ export async function fetchAndExtractText(url: string): Promise<string | null> {
     try {
         const response = await axios.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; Wabot/1.0; +https://your-bot-website.com)'
+                'User-Agent': 'Mozilla/5.0 (compatible; Wabot/1.0; +https://wabot-2b50.onrender.com)'
             },
             timeout: 10000 // 10 seconds timeout
         });
