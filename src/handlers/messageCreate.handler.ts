@@ -24,31 +24,27 @@ export async function handleMessageCreate(message: Message) {
     // Debug logging
     console.log(`Message: "${message.content}" | Mentioned: ${isMentioned} | Prefix: ${startsWithPrefix}`);
 
-    // Ignore messages without the prefix or a mention
-    if (!isMentioned && !startsWithPrefix) return;
+    // Check if we should process this message (mention OR prefix, not both)
+    if (!isMentioned && !startsWithPrefix) {
+        return; // Not for us, ignore
+    }
 
-    // Extract the query - handle mention and prefix properly
+    // Extract the query - prioritize mention over prefix
     let query = '';
     
     if (isMentioned) {
         // If mentioned, remove the mention and use the rest as query
         query = message.content.replace(/<@!?\d+>/g, '').trim();
-        // If the remaining content still has the prefix, remove it
+        // If the remaining content still has the prefix, remove it too
         if (query.startsWith(config.COMMAND_PREFIX + ' ')) {
             query = query.slice(config.COMMAND_PREFIX.length + 1).trim();
         }
-    } else if (startsWithPrefix) {
-        // Only if NOT mentioned, process prefix
+    } else {
+        // Only process prefix if NOT mentioned
         query = message.content.slice(config.COMMAND_PREFIX.length + 1).trim();
     }
 
     console.log(`Extracted query: "${query}"`);
-
-    // Prevent processing if we somehow got here without a valid trigger
-    if (!isMentioned && !startsWithPrefix) {
-        console.log('No valid trigger found, ignoring message');
-        return;
-    }
 
     // If query is empty after processing, show help
     if (!query) {
