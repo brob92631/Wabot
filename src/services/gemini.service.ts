@@ -1,13 +1,86 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel } from '@google/generative-ai';
 import { config } from '../config';
+import { UserProfile } from './userProfile.service'; // Import UserProfile interface
 
 // Initialize the main Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
 const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
+
+/**
+ * Defines the available tools (functions) that Gemini can call.
+ */
+const availableTools: FunctionDeclaration[] = [
+    {
+        name: 'get_current_time',
+        description: 'Gets the current time for a specified timezone.',
+        parameters: {
+            type: 'object',
+            properties: {
+                timezone: {
+                    type: 'string',
+                    description: 'The timezone to get the current time for, e.g., "America/New_York", "Europe/London".'
+                }
+            },
+            required: ['timezone']
+        }
+    },
+    // Add more tools here as needed, e.g., for searching the web, looking up definitions etc.
+    // {
+    //     name: 'search_web',
+    //     description: 'Searches the web for a given query.',
+    //     parameters: {
+    //         type: 'object',
+    //         properties: {
+    //             query: {
+    //                 type: 'string',
+    //                 description: 'The search query.'
+    //             }
+    //         },
+    //         required: ['query']
+    //     }
+    // }
+];
+
+/**
+ * Executes a tool call and returns the result.
+ * This is a placeholder for actual tool implementations.
+ * @param functionName The name of the function to call.
+ * @param args The arguments for the function.
+ * @returns The result of the function call.
+ */
+async function callTool(functionName: string, args: any): Promise<any> {
+    switch (functionName) {
+        case 'get_current_time':
+            try {
+                const now = new Date();
+                const options: Intl.DateTimeFormatOptions = {
+                    timeZone: args.timezone,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric'
+                };
+                const formatter = new Intl.DateTimeFormat('en-US', options);
+                return { time: formatter.format(now) };
+            } catch (e) {
+                console.error(`Invalid timezone for get_current_time: ${args.timezone}`, e);
+                return { error: `Invalid timezone: ${args.timezone}` };
+            }
+        // case 'search_web':
+        //     // Implement actual web search here using an external API or a custom scraper
+        //     console.log(`Simulating web search for: ${args.query}`);
+        //     return { results: [`Simulated search result for "${args.query}"`] };
+        default:
+            throw new Error(`Unknown function: ${functionName}`);
+    }
+}
 
 /**
  * Analyzes the user's query to determine if it requires the advanced model.
@@ -27,7 +100,10 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
         'complex', 'advanced', 'technical', 'implementation',
         'design', 'architecture', 'structure', 'system',
         'pros and cons', 'advantages', 'disadvantages',
-        'strategy', 'plan', 'approach', 'methodology'
+        'strategy', 'plan', 'approach', 'methodology',
+        'review', // Added for code review/explanation
+        'summarize', 'extract', // Added for URL processing
+        'what time is it', 'current time', 'timezone' // For get_current_time tool
     ];
 
     // Programming language keywords
@@ -43,7 +119,10 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
     const isLongQuery = query.length > 200;
     const hasMultipleQuestions = (query.match(/\?/g) || []).length > 1;
 
-    if (hasComplexKeywords || hasProgrammingKeywords || isLongQuery || hasMultipleQuestions) {
+    // Also check for explicit tool call intent
+    const wantsTime = queryLower.includes('time') && queryLower.includes('what') || queryLower.includes('current time');
+
+    if (hasComplexKeywords || hasProgrammingKeywords || isLongQuery || hasMultipleQuestions || wantsTime) {
         console.log(`Using PRO model for complex query: "${query.slice(0, 100)}..."`);
         return 'pro';
     }
@@ -111,14 +190,32 @@ function truncateAtSentence(text: string, maxLength: number): string {
  * Generates a response from Gemini based on the conversation history and a new query.
  * @param history The conversation history.
  * @param query The new user query.
+ * @param userProfile The user's profile data (tone, persona, custom memories).
  * @returns The generated text response.
  */
-export async function generateResponse(history: Content[], query: string): Promise<string> {
+export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
     try {
         const modelType = getModelForQuery(query);
         const model = modelType === 'pro' ? proModel : flashModel;
 
         console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
+
+        // Construct dynamic system instruction
+        let currentSystemInstruction = (config.SYSTEM_PROMPT.parts[0] as { text: string }).text;
+        if (userProfile.tone) {
+            currentSystemInstruction += `\n- Adopt a ${userProfile.tone} tone.`;
+        }
+        if (userProfile.persona) {
+            currentSystemInstruction += `\n- Act as a ${userProfile.persona}.`;
+        }
+        if (userProfile.customMemory && Object.keys(userProfile.customMemory).length > 0) {
+            currentSystemInstruction += `\n- Remember the following about the user:`;
+            for (const key in userProfile.customMemory) {
+                currentSystemInstruction += `\n  - ${key}: ${userProfile.customMemory[key]}`;
+            }
+        }
+        
+        const systemInstructionContent: Content = { parts: [{ text: currentSystemInstruction }] };
 
         const chat = model.startChat({
             history,
@@ -128,30 +225,63 @@ export async function generateResponse(history: Content[], query: string): Promi
                 topP: 0.9,
                 topK: 40,
             },
-            systemInstruction: config.SYSTEM_PROMPT,
+            systemInstruction: systemInstructionContent, // Use dynamic system instruction
+            tools: availableTools, // Provide tools to the model
         });
 
         const result = await chat.sendMessageStream(query);
         
         let fullResponse = '';
+        let toolCallDetected = false;
+
         for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            fullResponse += chunkText;
-            
-            // Early termination if response is getting too long
-            if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 2) {
-                console.log('Response getting too long, stopping stream early');
-                break;
+            // Handle tool calls
+            const call = chunk.functionCall;
+            if (call) {
+                toolCallDetected = true;
+                console.log(`Gemini requested tool call: ${call.name} with args:`, call.args);
+                try {
+                    const toolResult = await callTool(call.name, call.args);
+                    console.log('Tool result:', toolResult);
+                    // Send tool response back to Gemini and get the final response
+                    const toolResponseResult = await chat.sendMessage([
+                        {
+                            functionResponse: {
+                                name: call.name,
+                                response: toolResult,
+                            },
+                        },
+                    ]);
+                    // Collect the stream from the tool response
+                    for await (const toolResponseChunk of toolResponseResult.stream) {
+                        fullResponse += toolResponseChunk.text();
+                    }
+                    break; // Exit loop after handling tool call and getting response
+                } catch (toolError) {
+                    console.error('Error executing tool:', toolError);
+                    fullResponse = `Error executing tool: ${toolError instanceof Error ? toolError.message : toolError}`;
+                    break;
+                }
+            } else {
+                const chunkText = chunk.text();
+                fullResponse += chunkText;
+                
+                // Early termination if response is getting too long
+                if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 2) {
+                    console.log('Response getting too long, stopping stream early');
+                    break;
+                }
             }
         }
 
-        // Handle empty or very short responses
-        if (!fullResponse || fullResponse.trim().length < 5) {
+        // If no tool call was detected, but the response is still empty after streaming
+        if (!toolCallDetected && (!fullResponse || fullResponse.trim().length < 5)) {
             console.warn('Generated response is empty or too short');
             return "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
         }
 
-        // Handle overly long responses
+        // If a tool call was handled, the fullResponse is already populated.
+        // If not, we check the length of the directly streamed response.
         if (fullResponse.length > config.MAX_RESPONSE_LENGTH) {
             console.log(`Response too long (${fullResponse.length} chars), summarizing...`);
             return await summarizeText(fullResponse);
