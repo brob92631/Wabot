@@ -123,13 +123,13 @@ async function summarizeText(text: string): Promise<string> {
         const summary = result.response.text().trim();
         
         if (summary.length > config.MAX_RESPONSE_LENGTH) {
-            return truncateAtSentence(summary, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response truncated)*';
+            return truncateAtSentence(summary, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response was too long and had to be truncated)*';
         }
         
         return summary;
     } catch (error) {
         console.error('Error summarizing text:', error);
-        return truncateAtSentence(text, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response truncated)*';
+        return truncateAtSentence(text, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response was too long and had to be truncated)*';
     }
 }
 
@@ -187,7 +187,7 @@ export async function generateResponse(history: Content[], query: string, userPr
         const chat = model.startChat({
             history,
             generationConfig: {
-                maxOutputTokens: modelType === 'pro' ? 4000 : 2000,
+                maxOutputTokens: 4096,
                 temperature: 0.7,
                 topP: 0.9,
                 topK: 40,
@@ -202,19 +202,14 @@ export async function generateResponse(history: Content[], query: string, userPr
         let toolCallDetected = false;
 
         for await (const chunk of result.stream) {
-            // ---- THIS IS THE FIX ----
-            // Use the recommended functionCalls() which returns an array.
             const calls = chunk.functionCalls();
             if (calls && calls.length > 0) {
-                // For simplicity, we'll process the first call.
-                // A more robust implementation might handle multiple parallel calls.
                 const call = calls[0];
                 toolCallDetected = true;
                 console.log(`Gemini requested tool call: ${call.name} with args:`, call.args);
                 try {
                     const toolResult = await callTool(call.name, call.args);
                     console.log('Tool result:', toolResult);
-                    // Send tool response back to Gemini and get the final response
                     const toolResponseResult = await chat.sendMessage([
                         {
                             functionResponse: {
@@ -223,34 +218,30 @@ export async function generateResponse(history: Content[], query: string, userPr
                             },
                         },
                     ]);
-                    // Collect the text from the non-streaming tool response
                     fullResponse += toolResponseResult.response.text();
-                    break; // Exit loop after handling tool call and getting response
+                    break; 
                 } catch (toolError) {
                     console.error('Error executing tool:', toolError);
-                    fullResponse = `Error executing tool: ${toolError instanceof Error ? toolError.message : toolError}`;
+                    fullResponse = `I tried to use a tool, but it failed: ${toolError instanceof Error ? toolError.message : toolError}`;
                     break;
                 }
             } else {
-                // If there's no function call, just append the text.
-                const chunkText = chunk.text();
-                fullResponse += chunkText;
+                fullResponse += chunk.text();
                 
-                if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 2) {
+                if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 4) { // Increased limit before early stop
                     console.log('Response getting too long, stopping stream early');
                     break;
                 }
             }
         }
 
-        if (!toolCallDetected && (!fullResponse || fullResponse.trim().length < 5)) {
-            console.warn('Generated response is empty or too short');
+        if (!toolCallDetected && (!fullResponse || fullResponse.trim().length < 1)) {
+            console.warn('Generated response is empty.');
             return "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
         }
 
         if (fullResponse.length > config.MAX_RESPONSE_LENGTH) {
-            console.log(`Response too long (${fullResponse.length} chars), summarizing...`);
-            return await summarizeText(fullResponse);
+            return fullResponse; // Let the smartReply handler split the message
         }
 
         return fullResponse.trim();
@@ -262,12 +253,12 @@ export async function generateResponse(history: Content[], query: string, userPr
             if (error.message.includes('quota') || error.message.includes('rate limit')) {
                 return "I'm experiencing high usage right now. Please try again in a moment.";
             } else if (error.message.includes('safety')) {
-                return "I can't provide a response to that request. Please try asking something else.";
+                return "I can't provide a response to that request due to my safety guidelines. Please try asking something else.";
             } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                return "I'm having trouble connecting to my AI service. Please try again.";
+                return "I'm having trouble connecting to the AI service. Please check your connection and try again.";
             }
         }
         
-        return "Sorry, I encountered an error while generating a response. Please try again.";
+        throw error; // Re-throw the error to be caught by the handler
     }
 }
