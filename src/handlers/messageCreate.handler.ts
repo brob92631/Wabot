@@ -1,11 +1,11 @@
 // src/handlers/messageCreate.handler.ts
 
-import { Message } from 'discord.js';
+import { Message, TextBasedChannel } from 'discord.js'; // Import TextBasedChannel
 import { config } from '../config';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
-import * as WebScrapingService from '../services/webScraping.service'; // New import
-import * as UserProfileService from '../services/userProfile.service'; // New import
+import * as WebScrapingService from '../services/webScraping.service';
+import * as UserProfileService from '../services/userProfile.service';
 
 // Track recently processed messages to prevent duplicates
 const processedMessages = new Set<string>();
@@ -189,7 +189,10 @@ I remember the last few messages in our conversation for context. If you want to
 
     if (queryLower.startsWith('summarize ') && urlsInQuery && urlsInQuery.length > 0) {
         const url = urlsInQuery[0];
-        await message.channel.sendTyping();
+        // Ensure sendTyping is called on a TextBasedChannel
+        if (message.channel.isTextBased()) {
+            await (message.channel as TextBasedChannel).sendTyping();
+        }
         const content = await WebScrapingService.fetchAndExtractText(url);
         if (content) {
             const prompt = `Please provide a concise summary of the following text from ${url}:\n\n${content}`;
@@ -202,7 +205,10 @@ I remember the last few messages in our conversation for context. If you want to
 
     if (queryLower.startsWith('extract ') && urlsInQuery && urlsInQuery.length > 0) {
         const url = urlsInQuery[0];
-        await message.channel.sendTyping();
+        // Ensure sendTyping is called on a TextBasedChannel
+        if (message.channel.isTextBased()) {
+            await (message.channel as TextBasedChannel).sendTyping();
+        }
         const content = await WebScrapingService.fetchAndExtractText(url);
         if (content) {
             const prompt = `Please extract the key information and main points from the following text from ${url}:\n\n${content}`;
@@ -227,9 +233,9 @@ I remember the last few messages in our conversation for context. If you want to
  */
 async function processGeminiQuery(message: Message, prompt: string, originalQuery: string) {
     try {
-        // Only send typing if the channel supports it
-        if ('sendTyping' in message.channel) {
-            await message.channel.sendTyping();
+        // Only send typing if the channel supports it and is a TextBasedChannel
+        if (message.channel.isTextBased()) {
+            await (message.channel as TextBasedChannel).sendTyping();
         } 
 
         const history = ConversationService.getHistory(message.channel.id);
