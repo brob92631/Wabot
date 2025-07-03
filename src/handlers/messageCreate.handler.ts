@@ -24,20 +24,18 @@ export async function handleMessageCreate(message: Message) {
     // Ignore messages without the prefix or a mention
     if (!isMentioned && !startsWithPrefix) return;
 
-    // Extract the query - prioritize mention over prefix to avoid double processing
+    // Extract the query - handle mention and prefix properly
     let query = '';
+    
     if (isMentioned) {
         // If mentioned, remove the mention and use the rest as query
         query = message.content.replace(/<@!?\d+>/g, '').trim();
-        // If the remaining text starts with the prefix, remove it too
-        if (query.startsWith(config.COMMAND_PREFIX + ' ')) {
-            query = query.slice(config.COMMAND_PREFIX.length + 1).trim();
-        }
-    } else if (startsWithPrefix) {
-        // Only process prefix if NOT mentioned
+    } else {
+        // If not mentioned but starts with prefix, remove prefix
         query = message.content.slice(config.COMMAND_PREFIX.length + 1).trim();
     }
 
+    // If query is empty after processing, show help
     if (!query) {
         await message.reply('Hello! How can I help you today? You can ask me a question, or type `w help` for more options.');
         return;
@@ -66,7 +64,7 @@ I remember the last few messages in our conversation for context. If you want to
 
     // Process the query with Gemini
     try {
-       // await message.channel.sendTyping(); 
+        await message.channel.sendTyping(); 
 
         const history = ConversationService.getHistory(message.channel.id);
         const responseText = await GeminiService.generateResponse(history, query);
