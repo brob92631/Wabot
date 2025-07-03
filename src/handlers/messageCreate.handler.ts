@@ -24,11 +24,17 @@ export async function handleMessageCreate(message: Message) {
     // Ignore messages without the prefix or a mention
     if (!isMentioned && !startsWithPrefix) return;
 
-    // Extract the query
+    // Extract the query - prioritize mention over prefix to avoid double processing
     let query = '';
     if (isMentioned) {
-        query = message.content.replace(/<@!?\d+>/, '').trim();
-    } else { // startsWithPrefix
+        // If mentioned, remove the mention and use the rest as query
+        query = message.content.replace(/<@!?\d+>/g, '').trim();
+        // If the remaining text starts with the prefix, remove it too
+        if (query.startsWith(config.COMMAND_PREFIX + ' ')) {
+            query = query.slice(config.COMMAND_PREFIX.length + 1).trim();
+        }
+    } else if (startsWithPrefix) {
+        // Only process prefix if NOT mentioned
         query = message.content.slice(config.COMMAND_PREFIX.length + 1).trim();
     }
 
