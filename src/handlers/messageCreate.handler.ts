@@ -64,7 +64,10 @@ I remember the last few messages in our conversation for context. If you want to
 
     // Process the query with Gemini
     try {
-        await message.channel.sendTyping(); 
+        // Only send typing if the channel supports it
+        if ('sendTyping' in message.channel) {
+            await message.channel.sendTyping();
+        } 
 
         const history = ConversationService.getHistory(message.channel.id);
         const responseText = await GeminiService.generateResponse(history, query);
