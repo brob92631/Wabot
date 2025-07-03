@@ -14,7 +14,8 @@
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^0.7.2",
     "discord.js": "^14.17.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5", 
+    "ai": "^3.2.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
