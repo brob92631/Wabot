@@ -40,7 +40,7 @@ const openrouter = createOpenRouter({
 });
 
 // Define the chat model instance once
-const deepseekChatModel = openrouter.chat('deepseek/deepseek-v3:free');
+const deepseekChatModel = openrouter.chat('mistralai/mistral-7b-instruct');
 
 // Event: Bot is ready and online
 client.once('ready', () => {
