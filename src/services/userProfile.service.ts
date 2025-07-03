@@ -5,7 +5,7 @@ import { JSONFile } from 'lowdb/node';
 import path from 'path';
 
 // Define the structure of your database
-interface UserProfile {
+export interface UserProfile { // Fixed: Added export
     tone?: string; // e.g., 'friendly', 'formal', 'humorous'
     persona?: string; // e.g., 'pirate', 'academic', 'chef'
     customMemory?: Record<string, string>; // key-value pairs for user-defined memories
@@ -21,7 +21,15 @@ let db: Low<DatabaseSchema>;
  * Initializes the LowDB database.
  */
 export async function initializeUserProfileDB() {
-    const file = path.join(process.cwd(), 'data', 'userProfiles.json'); // Stores data in a 'data' folder
+    // Ensure the 'data' directory exists
+    const dataDir = path.join(process.cwd(), 'data');
+    try {
+        await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }));
+    } catch (error) {
+        console.error('Failed to create data directory:', error);
+    }
+
+    const file = path.join(dataDir, 'userProfiles.json'); // Stores data in a 'data' folder
     const adapter = new JSONFile<DatabaseSchema>(file);
     db = new Low(adapter, { userProfiles: {} });
 
