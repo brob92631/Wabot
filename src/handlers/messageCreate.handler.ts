@@ -27,6 +27,9 @@ export async function handleMessageCreate(message: Message) {
         return;
     }
     
+    // Store the channel with proper typing to ensure TypeScript understands
+    const channel = message.channel;
+    
     if (botState.isMaintenance && message.author.id !== config.BOT_OWNER_ID) {
         return;
     }
@@ -79,14 +82,14 @@ export async function handleMessageCreate(message: Message) {
                 break;
             }
             case 'reset': {
-                ConversationService.clearHistory(message.channel.id);
+                ConversationService.clearHistory(channel.id);
                 await message.reply({ embeds: [createSuccessEmbed('Conversation history cleared.')] });
                 break;
             }
             // --- Commands that require Gemini ---
             default: {
-                // Because of the .isTextBased() guard, message.channel is now safe to use.
-                await message.channel.sendTyping();
+                // Use the stored channel variable instead of message.channel
+                await channel.sendTyping();
                 
                 let prompt = content; // Use the full content as the default prompt
 
@@ -105,12 +108,12 @@ export async function handleMessageCreate(message: Message) {
                     prompt = `${command} the following text:\n\n${webContent}`;
                 }
 
-                const history = ConversationService.getHistory(message.channel.id);
+                const history = ConversationService.getHistory(channel.id);
                 const userProfile = UserProfileService.getProfile(message.author.id);
                 const responseText = await GeminiService.generateResponse(history, prompt, userProfile);
 
-                ConversationService.addMessageToHistory(message.channel.id, 'user', content);
-                ConversationService.addMessageToHistory(message.channel.id, 'model', responseText);
+                ConversationService.addMessageToHistory(channel.id, 'user', content);
+                ConversationService.addMessageToHistory(channel.id, 'model', responseText);
 
                 const trimmed = responseText.trim();
                 if (!trimmed) {
@@ -124,7 +127,7 @@ export async function handleMessageCreate(message: Message) {
                 } else {
                     const chunks = trimmed.match(/[\s\S]{1,2000}/g) || [];
                     for (const chunk of chunks) {
-                        await message.channel.send(chunk);
+                        await channel.send(chunk);
                     }
                 }
                 break;
