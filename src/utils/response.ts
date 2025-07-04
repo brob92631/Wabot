@@ -1,6 +1,6 @@
 // src/utils/response.ts
 
-import { EmbedBuilder, Message, Colors, TextChannel, DMChannel, NewsChannel } from 'discord.js';
+import { EmbedBuilder, Message, Colors, TextBasedChannel } from 'discord.js';
 import { config } from '../config';
 
 /**
@@ -10,14 +10,12 @@ const createBaseEmbed = () => new EmbedBuilder().setColor(Colors.Blurple);
 
 /**
  * Creates an embed for a standard response.
- * @param description The main text of the embed.
  */
 export const createResponseEmbed = (description: string) =>
     createBaseEmbed().setDescription(description);
 
 /**
  * Creates an embed for a successful action.
- * @param description The success message.
  */
 export const createSuccessEmbed = (description: string) =>
     createBaseEmbed()
@@ -26,7 +24,6 @@ export const createSuccessEmbed = (description: string) =>
 
 /**
  * Creates an embed for an error message.
- * @param description The error details.
  */
 export const createErrorEmbed = (description:string) =>
     createBaseEmbed()
@@ -71,20 +68,12 @@ export const createHelpEmbed = () => {
 
 /**
  * A smart reply function that uses embeds for shorter messages and splits longer ones.
- * This is ideal for Gemini responses that might contain long code blocks.
+ * This function now expects a channel that is GUARANTEED to be text-based.
  * @param message The original message object to reply to.
+ * @param channel The TextBasedChannel to send the reply in.
  * @param content The text content of the reply.
  */
-export async function smartReply(message: Message, content: string) {
-    // Top-level type guard. If the channel is not text-based, we exit immediately.
-    if (!message.channel?.isTextBased()) {
-        console.error("Attempted to reply in a non-text-based channel.");
-        return;
-    }
-    
-    // Store the channel in a variable that TypeScript now knows is a TextBasedChannel.
-    const channel = message.channel;
-
+export async function smartReply(message: Message, channel: TextBasedChannel, content: string) {
     const trimmedContent = content.trim();
 
     if (!trimmedContent) {
@@ -100,23 +89,16 @@ export async function smartReply(message: Message, content: string) {
     const chunks = trimmedContent.match(/[\s\S]{1,2000}/g) || [];
 
     for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
         try {
             if (i === 0) {
-                await message.reply(chunk);
+                await message.reply(chunks[i]);
             } else {
-                await channel.send(chunk);
+                await channel.send(chunks[i]);
             }
         } catch (error) {
             console.error("Failed to send a message chunk:", error);
-            
-            // *** THE FINAL FIX IS HERE ***
-            // We re-check the channel type inside the catch block to satisfy the compiler.
-            // This guarantees to TypeScript that 'channel' has the .send() method.
-            if (channel.isTextBased()) {
-                await channel.send({ embeds: [createErrorEmbed("I couldn't send the full response because it was too long or something went wrong.")] });
-            }
-            break; 
+            await channel.send({ embeds: [createErrorEmbed("I couldn't send the full response because it was too long or something went wrong.")] });
+            break;
         }
     }
 }
