@@ -1,6 +1,6 @@
 // src/handlers/messageCreate.handler.ts
 
-import { Message } from 'discord.js';
+import { Message, ChannelType } from 'discord.js'; // Import ChannelType
 import { config } from '../config';
 import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
@@ -16,9 +16,15 @@ import * as Response from '../utils/response';
 export async function handleMessageCreate(message: Message) {
     // --- Initial Guards ---
     if (message.author.bot) return;
-    if (!message.channel.isTextBased()) return;
+
+    // *** THE DEFINITIVE FIX IS HERE ***
+    // We check against the ChannelType enum. This is the official, type-safe way.
+    // If the channel is not a text channel in a server or a DM, we ignore the message.
+    if (message.channel.type !== ChannelType.GuildText && message.channel.type !== ChannelType.DM) {
+        return;
+    }
+    
     if (botState.isMaintenance && message.author.id !== config.BOT_OWNER_ID) {
-        // In maintenance mode, the bot ignores everyone except the owner
         return;
     }
 
@@ -33,7 +39,6 @@ export async function handleMessageCreate(message: Message) {
     if (isMentioned) {
         content = message.content.replace(/<@!?\d+>/g, '').trim();
     } else {
-        // Remove prefix, but not the space after it, so "w help" -> "help"
         content = message.content.substring(config.COMMAND_PREFIX.length).trim();
     }
     
@@ -51,7 +56,6 @@ export async function handleMessageCreate(message: Message) {
 
     // --- Command Router ---
     switch (command) {
-        // --- Standalone Utility Commands ---
         case 'help':
             await message.reply({ embeds: [Response.createHelpEmbed()] });
             break;
@@ -101,7 +105,6 @@ export async function handleMessageCreate(message: Message) {
             await message.reply({ embeds: [Response.createSuccessEmbed("I've cleared our conversation history. Let's start a fresh chat!")] });
             break;
 
-        // --- User Profile Commands ---
         case 'remember': {
             const whatToRemember = args.join(' ');
             const parts = whatToRemember.split('=').map(s => s.trim());
@@ -179,7 +182,6 @@ export async function handleMessageCreate(message: Message) {
             break;
         }
 
-        // --- Pre-processor Commands for Gemini ---
         case 'summarize':
         case 'extract': {
             const urlMatch = args.join(' ').match(/(https?:\/\/[^\s]+)/);
@@ -188,7 +190,7 @@ export async function handleMessageCreate(message: Message) {
                 return;
             }
             const url = urlMatch[0];
-            if ('sendTyping' in message.channel) await message.channel.sendTyping();
+            await message.channel.sendTyping();
             
             const webContent = await WebScrapingService.fetchAndExtractText(url);
             if (!webContent) {
@@ -204,7 +206,6 @@ export async function handleMessageCreate(message: Message) {
             break;
         }
         
-        // --- Default Case: General query for Gemini ---
         default:
             await processGeminiQuery(message, content, content);
             break;
@@ -218,21 +219,22 @@ export async function handleMessageCreate(message: Message) {
  * @param queryForHistory The original user query for history logging.
  */
 async function processGeminiQuery(message: Message, prompt: string, queryForHistory: string) {
-    try {
-        if ('sendTyping' in message.channel) {
-            await message.channel.sendTyping();
-        } 
+    // Because we already checked the channel type, message.channel is guaranteed to be a TextBasedChannel
+    const channel = message.channel;
 
-        const history = ConversationService.getHistory(message.channel.id);
+    try {
+        await channel.sendTyping();
+
+        const history = ConversationService.getHistory(channel.id);
         const userProfile = UserProfileService.getProfile(message.author.id);
 
         const responseText = await GeminiService.generateResponse(history, prompt, userProfile);
 
-        // Add the new exchange to history
-        ConversationService.addMessageToHistory(message.channel.id, 'user', queryForHistory);
-        ConversationService.addMessageToHistory(message.channel.id, 'model', responseText);
+        ConversationService.addMessageToHistory(channel.id, 'user', queryForHistory);
+        ConversationService.addMessageToHistory(channel.id, 'model', responseText);
 
-        await Response.smartReply(message, responseText);
+        // Pass the guaranteed-safe channel to the reply utility
+        await Response.smartReply(message, channel, responseText);
 
     } catch (error) {
         console.error('Error processing Gemini query:', error);
