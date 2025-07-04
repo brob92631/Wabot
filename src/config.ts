@@ -22,8 +22,10 @@ export const config = {
     // Gemini API settings
     GEMINI_MODELS: {
         // Use latest models for best performance
-        flash: 'gemini-2.5-flash', // Updated to latest for better performance
+        flash: 'gemini-2.5-flash', // Switched to 2.5 for better performance
         pro: 'gemini-2.5-pro',
+        // New dedicated model for image generation
+        imagen: 'imagen-4.0-generate-preview-06-06' // Using the latest Imagen 3 model
     },
 
     // Conversation memory settings
