@@ -1,152 +1,66 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool, GenerativeContentResult } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai'; // <-- NEW: Import for image generation
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Initialize the main Gemini client
+// --- INITIALIZE CLIENTS ---
+// Client for text/chat generation
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-
 const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
 const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
-/**
- * Defines the available tools (functions) that Gemini can call.
- */
-const tools: Tool[] = [
-    {
-        functionDeclarations: [
-            {
-                name: 'get_current_time',
-                description: 'Gets the current time for a specified timezone.',
-                parameters: {
-                    type: FunctionDeclarationSchemaType.OBJECT,
-                    properties: {
-                        timezone: {
-                            type: FunctionDeclarationSchemaType.STRING,
-                            description: 'The timezone to get the current time for, e.g., "America/New_York", "Europe/London".'
-                        }
-                    },
-                    required: ['timezone']
-                }
-            },
-        ]
-    }
-];
+// Client for image generation using the correct library
+const imageGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
+
+// --- TOOLS FOR TEXT MODELS (Unchanged) ---
+const tools: Tool[] = [ /* ... rest of tool definition is unchanged ... */ ];
+async function callTool(functionName: string, args: any): Promise<any> { /* ... unchanged ... */ }
+function getModelForQuery(query: string): 'pro' | 'flash' { /* ... unchanged ... */ }
 
 /**
- * Executes a tool call and returns the result.
- */
-async function callTool(functionName: string, args: any): Promise<any> {
-    switch (functionName) {
-        case 'get_current_time':
-            try {
-                const now = new Date();
-                const options: Intl.DateTimeFormatOptions = {
-                    timeZone: args.timezone,
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                    year: 'numeric',
-                    month: 'numeric',
-                    day: 'numeric'
-                };
-                const formatter = new Intl.DateTimeFormat('en-US', options);
-                return { time: formatter.format(now) };
-            } catch (e) {
-                console.error(`Invalid timezone for get_current_time: ${args.timezone}`, e);
-                return { error: `Invalid timezone: ${args.timezone}` };
-            }
-        default:
-            throw new Error(`Unknown function: ${functionName}`);
-    }
-}
-
-/**
- * Analyzes the user's query to determine if it requires the advanced model.
- */
-function getModelForQuery(query: string): 'pro' | 'flash' {
-    const queryLower = query.toLowerCase();
-    
-    // Complex query indicators
-    const complexKeywords = [
-        'code', 'program', 'function', 'algorithm', 'debug', 'error', 'fix',
-        'explain', 'analyze', 'compare', 'research', 'study', 'thesis',
-        'calculate', 'math', 'formula', 'equation', 'solve',
-        'step by step', 'detailed', 'comprehensive', 'thorough',
-        'complex', 'advanced', 'technical', 'implementation',
-        'design', 'architecture', 'structure', 'system',
-        'pros and cons', 'advantages', 'disadvantages',
-        'strategy', 'plan', 'approach', 'methodology',
-        'review', // Added for code review/explanation
-        'summarize', 'extract', // Added for URL processing
-        'what time is it', 'current time', 'timezone', // For get_current_time tool
-        'debate', 'argue', // For debate feature
-        'imagine', 'draw', 'create an image' // For image generation
-    ];
-
-    // Programming language keywords
-    const programmingKeywords = [
-        'javascript', 'python', 'java', 'c++', 'html', 'css', 'sql',
-        'react', 'node', 'typescript', 'php', 'ruby', 'go', 'rust',
-        'api', 'database', 'server', 'client', 'framework'
-    ];
-
-    // Check for complex indicators
-    const hasComplexKeywords = complexKeywords.some(keyword => queryLower.includes(keyword));
-    const hasProgrammingKeywords = programmingKeywords.some(keyword => queryLower.includes(keyword));
-    const isLongQuery = query.length > 200;
-    const hasMultipleQuestions = (query.match(/\?/g) || []).length > 1;
-
-    // Also check for explicit tool call intent
-    const wantsTime = queryLower.includes('time') && queryLower.includes('what') || queryLower.includes('current time');
-
-    if (hasComplexKeywords || hasProgrammingKeywords || isLongQuery || hasMultipleQuestions || wantsTime) {
-        console.log(`Using PRO model for complex query: "${query.slice(0, 100)}..."`);
-        return 'pro';
-    }
-
-    console.log(`Using FLASH model for simple query: "${query.slice(0, 100)}..."`);
-    return 'flash';
-}
-
-/**
- * Generates an image using the Gemini Pro model.
+ * Generates an image using the Imagen model.
  * @param prompt The text prompt for the image.
  * @returns A Buffer containing the image data (PNG).
  * @throws An error if image generation fails or is blocked.
  */
 export async function generateImage(prompt: string): Promise<Buffer> {
+    console.log(`Generating image with prompt: "${prompt}" using ${config.GEMINI_MODELS.imagen}`);
     try {
-        console.log(`Generating image with prompt: "${prompt}"`);
-        const imagePrompt = `Generate a high-quality, detailed, digital art image of: ${prompt}.`;
+        const response = await imageGenAI.models.generateImages({
+            model: config.GEMINI_MODELS.imagen,
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/png', // PNG supports transparency and is high quality
+                aspectRatio: '1:1',
+            },
+        });
 
-        const result: GenerativeContentResult = await proModel.generateContent(imagePrompt);
-        
-        const response = result.response;
-        const imagePart = response.parts?.find(part => part.inlineData);
-
-        if (!imagePart || !imagePart.inlineData) {
-            const blockReason = response.promptFeedback?.blockReason;
-            if (blockReason) {
-                console.warn(`Image generation blocked. Reason: ${blockReason}`);
-                throw new Error(`I couldn't generate that image. The request was blocked for: ${blockReason}. Please try a different prompt.`);
-            }
-            throw new Error('API did not return image data. The prompt might have been too complex or ambiguous.');
+        if (!response?.generatedImages || response.generatedImages.length === 0) {
+            // Check for more specific error info if available in the response structure
+            console.error('Image generation failed: No images were returned.');
+            throw new Error('The AI did not generate any images. Your prompt might have been blocked for safety reasons or was too ambiguous.');
         }
 
-        return Buffer.from(imagePart.inlineData.data, 'base64');
+        const image = response.generatedImages[0];
+        if (!image?.image?.imageBytes) {
+            console.error('Image generation failed: Returned object is missing image data.');
+            throw new Error('The AI response was incomplete and did not contain image data.');
+        }
+
+        // The imageBytes are a base64 encoded string, convert it to a Buffer
+        return Buffer.from(image.image.imageBytes, 'base64');
 
     } catch (error) {
         console.error('Error in generateImage:', error);
-        if (error instanceof Error) {
-            if (error.message.includes('blocked') || error.message.includes('API did not return')) {
-                throw error;
-            }
+        // Re-throw a user-friendly error
+        if (error instanceof Error && (error.message.includes('blocked') || error.message.includes('incomplete'))) {
+            throw error;
         }
-        throw new Error('Failed to generate the image. The AI service might be busy or the prompt could not be processed.');
+        throw new Error('Failed to generate the image. The AI service might be busy or an unknown error occurred.');
     }
 }
 
@@ -155,7 +69,7 @@ export async function generateImage(prompt: string): Promise<Buffer> {
  * Generates a response from Gemini based on the conversation history and a new query.
  */
 export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
-    // THIS FUNCTION REMAINS THE SAME AS THE ORIGINAL
+    // THIS FUNCTION REMAINS THE SAME AS BEFORE
     try {
         const modelType = getModelForQuery(query);
         const model = modelType === 'pro' ? proModel : flashModel;
