@@ -15,8 +15,8 @@ interface DatabaseSchema {
 let db: any;
 
 export async function initializeUserProfileDB() {
-    // **** THE FIX IS HERE ****
-    // We will write the database file to the /tmp directory, which is the ONLY writable location on Vercel.
+    // This is the critical fix for Vercel's filesystem.
+    // It writes the database to the one writable directory: /tmp.
     const file = path.join('/tmp', 'userProfiles.json');
 
     const { Low } = await import('lowdb');
@@ -25,11 +25,18 @@ export async function initializeUserProfileDB() {
     const adapter = new JSONFile<DatabaseSchema>(file);
     db = new Low(adapter, { userProfiles: {} });
 
-    await db.read();
-    console.log('User profile database initialized and stored at:', file);
+    try {
+        await db.read();
+    } catch (e) {
+        // If the file doesn't exist, it's okay. LowDB will create it on the first write.
+        console.log("No existing database found. A new one will be created on first write.");
+    }
+    
+    console.log('User profile database initialized. Storage path:', file);
 }
 
-// The rest of the functions in this file (getProfile, setProfileData, etc.) do not need to be changed.
+// The rest of the functions in this file remain the same
+// (getProfile, setProfileData, etc.)
 
 export function getProfile(userId: string): UserProfile {
     if (!db || !db.data) {
