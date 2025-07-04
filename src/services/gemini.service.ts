@@ -1,7 +1,7 @@
 // src/services/gemini.service.ts
 
 import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai';
-import { GoogleGenAI } from '@google/genai'; // <-- NEW: Import for image generation
+import { GoogleGenAI } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
@@ -15,16 +15,102 @@ const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 const imageGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 
-// --- TOOLS FOR TEXT MODELS (Unchanged) ---
-const tools: Tool[] = [ /* ... rest of tool definition is unchanged ... */ ];
-async function callTool(functionName: string, args: any): Promise<any> { /* ... unchanged ... */ }
-function getModelForQuery(query: string): 'pro' | 'flash' { /* ... unchanged ... */ }
+// --- TOOLS FOR TEXT MODELS ---
+const tools: Tool[] = [
+    {
+        functionDeclarations: [
+            {
+                name: 'get_current_time',
+                description: 'Gets the current time for a specified timezone.',
+                parameters: {
+                    type: FunctionDeclarationSchemaType.OBJECT,
+                    properties: {
+                        timezone: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            description: 'The timezone to get the current time for, e.g., "America/New_York", "Europe/London".'
+                        }
+                    },
+                    required: ['timezone']
+                }
+            },
+        ]
+    }
+];
+
+/**
+ * Executes a tool call and returns the result.
+ */
+async function callTool(functionName: string, args: any): Promise<any> {
+    switch (functionName) {
+        case 'get_current_time':
+            try {
+                const now = new Date();
+                const options: Intl.DateTimeFormatOptions = {
+                    timeZone: args.timezone,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric'
+                };
+                const formatter = new Intl.DateTimeFormat('en-US', options);
+                return { time: formatter.format(now) };
+            } catch (e) {
+                console.error(`Invalid timezone for get_current_time: ${args.timezone}`, e);
+                return { error: `Invalid timezone: ${args.timezone}` };
+            }
+        default:
+            // This default case is crucial to prevent the TS2355 error.
+            throw new Error(`Unknown function: ${functionName}`);
+    }
+}
+
+/**
+ * Analyzes the user's query to determine if it requires the advanced model.
+ */
+function getModelForQuery(query: string): 'pro' | 'flash' {
+    const queryLower = query.toLowerCase();
+    
+    const complexKeywords = [
+        'code', 'program', 'function', 'algorithm', 'debug', 'error', 'fix',
+        'explain', 'analyze', 'compare', 'research', 'study', 'thesis',
+        'calculate', 'math', 'formula', 'equation', 'solve',
+        'step by step', 'detailed', 'comprehensive', 'thorough',
+        'complex', 'advanced', 'technical', 'implementation',
+        'design', 'architecture', 'structure', 'system',
+        'pros and cons', 'advantages', 'disadvantages',
+        'strategy', 'plan', 'approach', 'methodology',
+        'review', 'summarize', 'extract',
+        'what time is it', 'current time', 'timezone',
+        'debate', 'argue', 'imagine', 'draw', 'create an image'
+    ];
+
+    const programmingKeywords = [
+        'javascript', 'python', 'java', 'c++', 'html', 'css', 'sql',
+        'react', 'node', 'typescript', 'php', 'ruby', 'go', 'rust',
+        'api', 'database', 'server', 'client', 'framework'
+    ];
+
+    const hasComplexKeywords = complexKeywords.some(keyword => queryLower.includes(keyword));
+    const hasProgrammingKeywords = programmingKeywords.some(keyword => queryLower.includes(keyword));
+    const isLongQuery = query.length > 200;
+    const hasMultipleQuestions = (query.match(/\?/g) || []).length > 1;
+    const wantsTime = queryLower.includes('time') && (queryLower.includes('what') || queryLower.includes('current'));
+
+    if (hasComplexKeywords || hasProgrammingKeywords || isLongQuery || hasMultipleQuestions || wantsTime) {
+        console.log(`Using PRO model for complex query: "${query.slice(0, 100)}..."`);
+        return 'pro';
+    }
+
+    console.log(`Using FLASH model for simple query: "${query.slice(0, 100)}..."`);
+    return 'flash';
+}
+
 
 /**
  * Generates an image using the Imagen model.
- * @param prompt The text prompt for the image.
- * @returns A Buffer containing the image data (PNG).
- * @throws An error if image generation fails or is blocked.
  */
 export async function generateImage(prompt: string): Promise<Buffer> {
     console.log(`Generating image with prompt: "${prompt}" using ${config.GEMINI_MODELS.imagen}`);
@@ -34,13 +120,12 @@ export async function generateImage(prompt: string): Promise<Buffer> {
             prompt: prompt,
             config: {
                 numberOfImages: 1,
-                outputMimeType: 'image/png', // PNG supports transparency and is high quality
+                outputMimeType: 'image/png',
                 aspectRatio: '1:1',
             },
         });
 
         if (!response?.generatedImages || response.generatedImages.length === 0) {
-            // Check for more specific error info if available in the response structure
             console.error('Image generation failed: No images were returned.');
             throw new Error('The AI did not generate any images. Your prompt might have been blocked for safety reasons or was too ambiguous.');
         }
@@ -51,12 +136,10 @@ export async function generateImage(prompt: string): Promise<Buffer> {
             throw new Error('The AI response was incomplete and did not contain image data.');
         }
 
-        // The imageBytes are a base64 encoded string, convert it to a Buffer
         return Buffer.from(image.image.imageBytes, 'base64');
 
     } catch (error) {
         console.error('Error in generateImage:', error);
-        // Re-throw a user-friendly error
         if (error instanceof Error && (error.message.includes('blocked') || error.message.includes('incomplete'))) {
             throw error;
         }
@@ -69,14 +152,12 @@ export async function generateImage(prompt: string): Promise<Buffer> {
  * Generates a response from Gemini based on the conversation history and a new query.
  */
 export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
-    // THIS FUNCTION REMAINS THE SAME AS BEFORE
     try {
         const modelType = getModelForQuery(query);
         const model = modelType === 'pro' ? proModel : flashModel;
 
         console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
 
-        // Construct dynamic system instruction
         let currentSystemInstruction = (config.SYSTEM_PROMPT.parts[0] as { text: string }).text;
         if (userProfile.tone) {
             currentSystemInstruction += `\n- Adopt a ${userProfile.tone} tone.`;
@@ -113,8 +194,8 @@ export async function generateResponse(history: Content[], query: string, userPr
         for await (const chunk of result.stream) {
             const calls = chunk.functionCalls();
             if (calls && calls.length > 0) {
-                const call = calls[0];
                 toolCallDetected = true;
+                const call = calls[0];
                 console.log(`Gemini requested tool call: ${call.name} with args:`, call.args);
                 try {
                     const toolResult = await callTool(call.name, call.args);
@@ -131,13 +212,12 @@ export async function generateResponse(history: Content[], query: string, userPr
                     break; 
                 } catch (toolError) {
                     console.error('Error executing tool:', toolError);
-                    fullResponse = `I tried to use a tool, but it failed: ${toolError instanceof Error ? toolError.message : toolError}`;
+                    fullResponse = `I tried to use a tool, but it failed: ${toolError instanceof Error ? toolError.message : String(toolError)}`;
                     break;
                 }
             } else {
                 fullResponse += chunk.text();
-                
-                if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 4) { // Increased limit before early stop
+                if (fullResponse.length > config.MAX_RESPONSE_LENGTH * 4) {
                     console.log('Response getting too long, stopping stream early');
                     break;
                 }
@@ -150,7 +230,7 @@ export async function generateResponse(history: Content[], query: string, userPr
         }
 
         if (fullResponse.length > config.MAX_RESPONSE_LENGTH) {
-            return fullResponse; // Let the smartReply handler split the message
+            return fullResponse;
         }
 
         return fullResponse.trim();
@@ -168,6 +248,6 @@ export async function generateResponse(history: Content[], query: string, userPr
             }
         }
         
-        throw error; // Re-throw the error to be caught by the handler
+        throw error;
     }
 }
