@@ -55,7 +55,7 @@ export async function handleMessageCreate(message: Message) {
                     .addFields(
                         { name: '💬 Core', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`uptime`: Shows how long I\'ve been online.\n`reset`: Clears our conversation history in this channel.' },
                         { name: '🧠 Profile', value: '`set-tone [tone]`: Set my tone (e.g., witty, formal).\n`set-persona [persona]`: Set my persona (e.g., pirate, scientist).\n`remember [key] is [value]`: Teach me something about you.\n`forget [key]`: Make me forget something.\n`show-my-data`: See what I remember about you.\n`reset-profile`: Clears your entire user profile.' },
-                        { name: '✨ AI Features', value: '`imagine [prompt]`: I\'ll create an image for you.\n`debate [topic]`: I\'ll take a stance and debate you.\n`review [code]`: I\'ll review a code snippet for you.\n`summarize [url]`: I\'ll summarize the content of a webpage.\n`extract [url]`: I\'ll extract the main text from a webpage.' }
+                        { name: '✨ AI Features', value: '`say [text]`: I\'ll speak the text in an audio message.\n`debate [topic]`: I\'ll take a stance and debate you.\n`review [code]`: I\'ll review a code snippet for you.\n`summarize [url]`: I\'ll summarize the content of a webpage.\n`extract [url]`: I\'ll extract the main text from a webpage.' }
                     )
                     .setFooter({ text: 'Any other message will start a normal conversation!' });
                 await message.reply({ embeds: [helpEmbed] });
@@ -81,6 +81,7 @@ export async function handleMessageCreate(message: Message) {
             }
 
             // --- Profile Commands ---
+            // ... (All profile commands like set-tone, remember, etc. remain unchanged)
             case 'set-tone': {
                 const tone = args.join(' ');
                 if (!tone) return message.reply({ embeds: [createErrorEmbed('Please provide a tone, e.g., `set-tone witty and slightly sarcastic`.')] });
@@ -97,8 +98,8 @@ export async function handleMessageCreate(message: Message) {
             }
             case 'remember': {
                 const memoryString = args.join(' ');
-                const match = memoryString.match(/(.+) is (.+)/i); // Case-insensitive 'is'
-                if (!match) return message.reply({ embeds: [createErrorEmbed('Please use the format `remember [key] is [value]`, e.g., `remember my favorite game is Stardew Valley`.')] });
+                const match = memoryString.match(/(.+) is (.+)/i);
+                if (!match) return message.reply({ embeds: [createErrorEmbed('Please use the format `remember [key] is [value]`.')] });
                 const [, key, value] = match;
                 await UserProfileService.addCustomMemory(message.author.id, key.trim(), value.trim());
                 await message.reply({ embeds: [createSuccessEmbed(`Okay, I'll remember that **${key.trim()}** is **${value.trim()}**.`)] });
@@ -106,7 +107,7 @@ export async function handleMessageCreate(message: Message) {
             }
             case 'forget': {
                 const key = args.join(' ');
-                if (!key) return message.reply({ embeds: [createErrorEmbed('Please tell me what to forget, e.g., `forget my favorite game`.')] });
+                if (!key) return message.reply({ embeds: [createErrorEmbed('Please tell me what to forget.')] });
                 await UserProfileService.removeCustomMemory(message.author.id, key);
                 await message.reply({ embeds: [createSuccessEmbed(`Okay, I've forgotten about **${key}**.`)] });
                 break;
@@ -114,9 +115,7 @@ export async function handleMessageCreate(message: Message) {
             case 'show-my-data': {
                 const profile = UserProfileService.getProfile(message.author.id);
                 const embed = new EmbedBuilder().setColor(Colors.Blurple).setTitle(`${message.author.username}'s Profile Data`).setTimestamp();
-                
                 const hasData = profile && (profile.tone || profile.persona || (profile.customMemory && Object.keys(profile.customMemory).length > 0));
-
                 if (!hasData) {
                     embed.setDescription("I don't have any data stored for you yet!");
                 } else {
@@ -137,29 +136,30 @@ export async function handleMessageCreate(message: Message) {
                 break;
             }
 
-            // --- Standalone AI Commands ---
-            case 'imagine': {
-                const prompt = args.join(' ');
-                if (!prompt) return message.reply({ embeds: [createErrorEmbed('Please provide a prompt for the image.')] });
 
-                const thinkingMessage = await message.reply(`🎨 Generating an image for: **"${prompt}"**... this might take a moment.`);
+            // --- Standalone AI Commands ---
+            case 'say': {
+                const textToSpeak = args.join(' ');
+                if (!textToSpeak) return message.reply({ embeds: [createErrorEmbed('Please provide some text for me to say.')] });
+
+                const thinkingMessage = await message.reply(`🎤 Generating audio for: **"${textToSpeak.slice(0, 50)}..."**`);
                 try {
-                    const imageBuffer = await GeminiService.generateImage(prompt);
-                    const attachment = new AttachmentBuilder(imageBuffer, { name: 'wabot-image.png' });
-                    await thinkingMessage.edit({ content: `Here is your image, <@${message.author.id}>!`, files: [attachment], embeds: [] });
+                    const audioBuffer = await GeminiService.generateSpeech(textToSpeak);
+                    const attachment = new AttachmentBuilder(audioBuffer, { name: 'wabot-speech.wav' });
+                    await thinkingMessage.edit({ content: `Here is your audio, <@${message.author.id}>!`, files: [attachment], embeds: [] });
                 } catch (e: any) {
-                    await thinkingMessage.edit({ content: '', embeds: [createErrorEmbed(e.message ?? "An unknown error occurred during image generation.")] });
+                    await thinkingMessage.edit({ content: '', embeds: [createErrorEmbed(e.message ?? "An unknown error occurred during audio generation.")] });
                 }
                 break;
             }
 
             // --- Commands that modify the prompt & use conversation history ---
             default: {
+                // ... (default command handler remains unchanged)
                 await channel.sendTyping();
                 
-                let prompt = content; // The full content, including the command and args
+                let prompt = content;
 
-                // Pre-process specific commands to create a more detailed prompt for Gemini
                 if (command === 'summarize' || command === 'extract') {
                     const urlMatch = args.join(' ').match(/(https?:\/\/[^\s]+)/);
                     if (!urlMatch) {
@@ -172,7 +172,7 @@ export async function handleMessageCreate(message: Message) {
                         await thinkingMessage.edit({ embeds: [createErrorEmbed(`Could not fetch content from that URL.`)] });
                         return;
                     }
-                    await thinkingMessage.delete().catch(() => {}); // Delete thinking message
+                    await thinkingMessage.delete().catch(() => {});
                     prompt = `${command} the following text:\n\n${webContent}`;
                 } else if (command === 'review') {
                     const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
