@@ -1,28 +1,20 @@
 // src/services/userProfile.service.ts
 
-// **** ALL 'lowdb' IMPORTS ARE REMOVED FROM THE TOP LEVEL ****
 import path from 'path';
 
-// Define the structure of your database
 export interface UserProfile {
-    tone?: string; // e.g., 'friendly', 'formal', 'humorous'
-    persona?: string; // e.g., 'pirate', 'academic', 'chef'
-    customMemory?: Record<string, string>; // key-value pairs for user-defined memories
+    tone?: string;
+    persona?: string;
+    customMemory?: Record<string, string>;
 }
 
 interface DatabaseSchema {
-    userProfiles: Record<string, UserProfile>; // Key: userId
+    userProfiles: Record<string, UserProfile>;
 }
 
-// The db instance is declared but will be initialized asynchronously.
-// 'any' is appropriate here due to the dynamic nature of the import.
 let db: any;
 
-/**
- * Initializes the LowDB database.
- */
 export async function initializeUserProfileDB() {
-    // Ensure the 'data' directory exists
     const dataDir = path.join(process.cwd(), 'data');
     try {
         await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }));
@@ -30,13 +22,10 @@ export async function initializeUserProfileDB() {
         console.error('Failed to create data directory:', error);
     }
 
-    // **** THIS IS THE FIX: Dynamically import BOTH modules inside the async function ****
     const { Low } = await import('lowdb');
     const { JSONFile } = await import('lowdb/node');
 
     const file = path.join(dataDir, 'userProfiles.json');
-    
-    // Now that both are imported, we can create the adapter and the db instance.
     const adapter = new JSONFile<DatabaseSchema>(file);
     db = new Low(adapter, { userProfiles: {} });
 
@@ -44,29 +33,16 @@ export async function initializeUserProfileDB() {
     console.log('User profile database initialized.');
 }
 
-/**
- * Retrieves a user's profile.
- * @param userId The ID of the user.
- * @returns The user's profile object, or an empty object if not found.
- */
 export function getProfile(userId: string): UserProfile {
     if (!db || !db.data) {
-        console.error('Database not initialized or data not loaded.');
+        console.error('Database not initialized.');
         return {};
     }
     return db.data.userProfiles[userId] || {};
 }
 
-/**
- * Sets specific data within a user's profile.
- * @param userId The ID of the user.
- * @param data The partial UserProfile data to set.
- */
 export async function setProfileData(userId: string, data: Partial<UserProfile>) {
-    if (!db || !db.data) {
-        console.error('Database not initialized or data not loaded.');
-        return;
-    }
+    if (!db || !db.data) return;
     if (!db.data.userProfiles[userId]) {
         db.data.userProfiles[userId] = {};
     }
@@ -74,17 +50,8 @@ export async function setProfileData(userId: string, data: Partial<UserProfile>)
     await db.write();
 }
 
-/**
- * Adds or updates a custom memory key-value pair for a user.
- * @param userId The ID of the user.
- * @param key The memory key.
- * @param value The memory value.
- */
 export async function addCustomMemory(userId: string, key: string, value: string) {
-    if (!db || !db.data) {
-        console.error('Database not initialized or data not loaded.');
-        return;
-    }
+    if (!db || !db.data) return;
     if (!db.data.userProfiles[userId]) {
         db.data.userProfiles[userId] = {};
     }
@@ -95,43 +62,23 @@ export async function addCustomMemory(userId: string, key: string, value: string
     await db.write();
 }
 
-/**
- * Removes a custom memory key from a user's profile.
- * @param userId The ID of the user.
- * @param key The memory key to remove.
- */
 export async function removeCustomMemory(userId: string, key: string) {
-    if (!db || !db.data) {
-        console.error('Database not initialized or data not loaded.');
-        return;
+    if (!db?.data?.userProfiles[userId]?.customMemory) return;
+    
+    delete db.data.userProfiles[userId].customMemory![key];
+    if (Object.keys(db.data.userProfiles[userId].customMemory!).length === 0) {
+        delete db.data.userProfiles[userId].customMemory;
     }
-    if (db.data.userProfiles[userId]?.customMemory) {
-        delete db.data.userProfiles[userId].customMemory![key];
-        // If customMemory is now empty, remove the object itself for cleanliness
-        if (Object.keys(db.data.userProfiles[userId].customMemory!).length === 0) {
-            delete db.data.userProfiles[userId].customMemory;
-        }
-        await db.write();
-    }
+    await db.write();
 }
 
-/**
- * Clears specific data or the entire profile for a user.
- * @param userId The ID of the user.
- * @param key Optional. If provided, clears only a top-level key like 'tone' or 'persona'. If not, clears the entire profile.
- */
 export async function clearProfileData(userId: string, key?: 'tone' | 'persona' | 'customMemory') {
-    if (!db || !db.data) {
-        console.error('Database not initialized or data not loaded.');
-        return;
+    if (!db?.data?.userProfiles[userId]) return;
+
+    if (key) {
+        delete db.data.userProfiles[userId][key];
+    } else {
+        delete db.data.userProfiles[userId];
     }
-    if (db.data.userProfiles[userId]) {
-        if (key) {
-            delete db.data.userProfiles[userId][key];
-        } else {
-            // Clear the entire profile for the user
-            delete db.data.userProfiles[userId];
-        }
-        await db.write();
-    }
+    await db.write();
 }
