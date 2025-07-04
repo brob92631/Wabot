@@ -1,4 +1,4 @@
-
+// Wabot-main/package.json
 
 {
   "name": "wabot",
@@ -20,10 +20,12 @@
     "dotenv": "^16.4.5",
     "axios": "^1.7.2",
     "cheerio": "^1.0.0",
-    "lowdb": "^7.0.1"
+    "lowdb": "^7.0.1",
+    "mime": "^4.0.3"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
+    "@types/mime": "^3.0.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   }
