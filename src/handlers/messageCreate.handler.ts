@@ -79,9 +79,6 @@ export async function handleMessageCreate(message: Message) {
                 await message.reply({ embeds: [createSuccessEmbed('Conversation history cleared.')] });
                 break;
             }
-
-            // --- Profile Commands ---
-            // ... (All profile commands like set-tone, remember, etc. remain unchanged)
             case 'set-tone': {
                 const tone = args.join(' ');
                 if (!tone) return message.reply({ embeds: [createErrorEmbed('Please provide a tone, e.g., `set-tone witty and slightly sarcastic`.')] });
@@ -135,9 +132,6 @@ export async function handleMessageCreate(message: Message) {
                 await message.reply({ embeds: [createSuccessEmbed('Your entire user profile has been cleared.')] });
                 break;
             }
-
-
-            // --- Standalone AI Commands ---
             case 'say': {
                 const textToSpeak = args.join(' ');
                 if (!textToSpeak) return message.reply({ embeds: [createErrorEmbed('Please provide some text for me to say.')] });
@@ -152,10 +146,7 @@ export async function handleMessageCreate(message: Message) {
                 }
                 break;
             }
-
-            // --- Commands that modify the prompt & use conversation history ---
             default: {
-                // ... (default command handler remains unchanged)
                 await channel.sendTyping();
                 
                 let prompt = content;
