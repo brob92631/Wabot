@@ -1,6 +1,6 @@
 // src/utils/response.ts
 
-import { EmbedBuilder, Message, Colors } from 'discord.js';
+import { EmbedBuilder, Message, Colors, TextChannel, DMChannel, NewsChannel } from 'discord.js';
 import { config } from '../config';
 
 /**
@@ -76,15 +76,13 @@ export const createHelpEmbed = () => {
  * @param content The text content of the reply.
  */
 export async function smartReply(message: Message, content: string) {
-    // Type guard: ensure we are in a channel that can receive messages.
-    // The optional chaining (?.) is a small safety improvement.
+    // Top-level type guard. If the channel is not text-based, we exit immediately.
     if (!message.channel?.isTextBased()) {
-        console.error("Cannot send message in a non-text-based channel.");
+        console.error("Attempted to reply in a non-text-based channel.");
         return;
     }
     
-    // *** THE FIX ***
-    // Store the narrowed channel in a variable. TypeScript will remember its type.
+    // Store the channel in a variable that TypeScript now knows is a TextBasedChannel.
     const channel = message.channel;
 
     const trimmedContent = content.trim();
@@ -107,14 +105,18 @@ export async function smartReply(message: Message, content: string) {
             if (i === 0) {
                 await message.reply(chunk);
             } else {
-                // Use the type-safe 'channel' variable
                 await channel.send(chunk);
             }
         } catch (error) {
             console.error("Failed to send a message chunk:", error);
-            // Use the type-safe 'channel' variable here too
-            await channel.send({ embeds: [createErrorEmbed("I couldn't send the full response because it was too long or something went wrong.")] });
-            break;
+            
+            // *** THE FINAL FIX IS HERE ***
+            // We re-check the channel type inside the catch block to satisfy the compiler.
+            // This guarantees to TypeScript that 'channel' has the .send() method.
+            if (channel.isTextBased()) {
+                await channel.send({ embeds: [createErrorEmbed("I couldn't send the full response because it was too long or something went wrong.")] });
+            }
+            break; 
         }
     }
 }
