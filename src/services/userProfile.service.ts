@@ -15,23 +15,21 @@ interface DatabaseSchema {
 let db: any;
 
 export async function initializeUserProfileDB() {
-    const dataDir = path.join(process.cwd(), 'data');
-    try {
-        await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }));
-    } catch (error) {
-        console.error('Failed to create data directory:', error);
-    }
+    // **** THE FIX IS HERE ****
+    // We will write the database file to the /tmp directory, which is the ONLY writable location on Vercel.
+    const file = path.join('/tmp', 'userProfiles.json');
 
     const { Low } = await import('lowdb');
     const { JSONFile } = await import('lowdb/node');
 
-    const file = path.join(dataDir, 'userProfiles.json');
     const adapter = new JSONFile<DatabaseSchema>(file);
     db = new Low(adapter, { userProfiles: {} });
 
     await db.read();
-    console.log('User profile database initialized.');
+    console.log('User profile database initialized and stored at:', file);
 }
+
+// The rest of the functions in this file (getProfile, setProfileData, etc.) do not need to be changed.
 
 export function getProfile(userId: string): UserProfile {
     if (!db || !db.data) {
