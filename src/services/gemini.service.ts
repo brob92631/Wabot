@@ -1,19 +1,17 @@
 // src/services/gemini.service.ts
 
 import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai';
-import { GoogleGenAI } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
-// The mime package is not needed here as we request WAV directly and don't need to convert.
 
 // --- INITIALIZE CLIENTS ---
-// Client for text/chat generation
+// This is the only client we need.
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+
+// Initialize all models from the config
 const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
 const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
-
-// Client for advanced features like TTS
-const googleGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const ttsModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.tts }); // <-- Correctly initialize the TTS model
 
 
 // --- TOOLS FOR TEXT MODELS ---
@@ -118,26 +116,23 @@ export async function generateSpeech(text: string): Promise<Buffer> {
     console.log(`Generating speech for: "${text.slice(0, 50)}..."`);
     try {
         const ttsConfig = {
-            temperature: 0,
-            responseMimeType: 'audio/wav', // Request WAV directly
+            responseMimeType: 'audio/wav',
         };
         const contents = [{ role: 'user', parts: [{ text }] }];
 
-        // The TTS model is part of the standard generateContent endpoint
-        const response = await proModel.generateContent({
+        // *** THE FIX IS HERE: Use ttsModel instead of proModel ***
+        const response = await ttsModel.generateContent({
             contents,
             generationConfig: ttsConfig,
         });
 
         const audioPart = response?.response.candidates?.[0]?.content?.parts?.[0];
 
-        // THIS IS THE CORRECTED, MORE ROBUST CHECK
         if (!audioPart?.inlineData?.data) {
             console.error('TTS generation failed: No audio data was returned from the API.');
             throw new Error('The AI did not generate any audio. The text might have been too long, contained unsupported characters, or was blocked for safety reasons.');
         }
 
-        // After the check above, TypeScript knows `audioPart.inlineData.data` is a string.
         return Buffer.from(audioPart.inlineData.data, 'base64');
         
     } catch (error) {
