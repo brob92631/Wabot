@@ -1,8 +1,6 @@
 // src/services/userProfile.service.ts
 
-// **** CHANGE #1: The top-level import of 'Low' is removed. ****
-// We will import it dynamically inside the initialization function.
-import { JSONFile } from 'lowdb/node';
+// **** ALL 'lowdb' IMPORTS ARE REMOVED FROM THE TOP LEVEL ****
 import path from 'path';
 
 // Define the structure of your database
@@ -16,9 +14,9 @@ interface DatabaseSchema {
     userProfiles: Record<string, UserProfile>; // Key: userId
 }
 
-// **** CHANGE #2: 'db' is declared but not initialized here. ****
-// We also need to explicitly type it to avoid TypeScript errors.
-let db: any; // Using 'any' here is acceptable as we're dealing with a dynamic import.
+// The db instance is declared but will be initialized asynchronously.
+// 'any' is appropriate here due to the dynamic nature of the import.
+let db: any;
 
 /**
  * Initializes the LowDB database.
@@ -32,14 +30,14 @@ export async function initializeUserProfileDB() {
         console.error('Failed to create data directory:', error);
     }
 
-    // **** CHANGE #3: This is the dynamic import. ****
-    // We dynamically import the ESM packages inside an async function.
+    // **** THIS IS THE FIX: Dynamically import BOTH modules inside the async function ****
     const { Low } = await import('lowdb');
+    const { JSONFile } = await import('lowdb/node');
 
     const file = path.join(dataDir, 'userProfiles.json');
-    const adapter = new JSONFile<DatabaseSchema>(file);
     
-    // Now we can initialize the db instance
+    // Now that both are imported, we can create the adapter and the db instance.
+    const adapter = new JSONFile<DatabaseSchema>(file);
     db = new Low(adapter, { userProfiles: {} });
 
     await db.read();
