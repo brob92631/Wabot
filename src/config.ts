@@ -21,11 +21,11 @@ export const config = {
 
     // Gemini API settings
     GEMINI_MODELS: {
-        // Use latest models for best performance
+        // Use latest models for best performance (2.5 pro and 2.5 flash) 
         flash: 'gemini-2.5-flash',
         pro: 'gemini-2.5-pro',
         // New dedicated model for Text-to-Speech
-        tts: 'gemini-2.5-pro-preview-tts',
+        tts: 'models/', // <-- CORRECTED MODEL NAME
     },
     
     // Default voice for the 'say' command
