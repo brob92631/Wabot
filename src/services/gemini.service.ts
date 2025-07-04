@@ -1,6 +1,6 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool, GenerativeContentResult } from '@google/generative-ai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
@@ -82,7 +82,9 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
         'strategy', 'plan', 'approach', 'methodology',
         'review', // Added for code review/explanation
         'summarize', 'extract', // Added for URL processing
-        'what time is it', 'current time', 'timezone' // For get_current_time tool
+        'what time is it', 'current time', 'timezone', // For get_current_time tool
+        'debate', 'argue', // For debate feature
+        'imagine', 'draw', 'create an image' // For image generation
     ];
 
     // Programming language keywords
@@ -111,56 +113,49 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
 }
 
 /**
- * Summarizes text that is too long for a Discord message.
+ * Generates an image using the Gemini Pro model.
+ * @param prompt The text prompt for the image.
+ * @returns A Buffer containing the image data (PNG).
+ * @throws An error if image generation fails or is blocked.
  */
-async function summarizeText(text: string): Promise<string> {
-    console.log(`Response is ${text.length} characters, attempting to summarize...`);
-    
+export async function generateImage(prompt: string): Promise<Buffer> {
     try {
-        const prompt = `Please create a concise summary of the following text. Keep all important information but make it shorter for Discord (under ${config.MAX_RESPONSE_LENGTH - 100} characters). Maintain the same tone and include key points:\n\n${text}`;
+        console.log(`Generating image with prompt: "${prompt}"`);
+        const imagePrompt = `Generate a high-quality, detailed, digital art image of: ${prompt}.`;
+
+        const result: GenerativeContentResult = await proModel.generateContent(imagePrompt);
         
-        const result = await flashModel.generateContent(prompt);
-        const summary = result.response.text().trim();
-        
-        if (summary.length > config.MAX_RESPONSE_LENGTH) {
-            return truncateAtSentence(summary, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response was too long and had to be truncated)*';
+        const response = result.response;
+        const imagePart = response.parts?.find(part => part.inlineData);
+
+        if (!imagePart || !imagePart.inlineData) {
+            const blockReason = response.promptFeedback?.blockReason;
+            if (blockReason) {
+                console.warn(`Image generation blocked. Reason: ${blockReason}`);
+                throw new Error(`I couldn't generate that image. The request was blocked for: ${blockReason}. Please try a different prompt.`);
+            }
+            throw new Error('API did not return image data. The prompt might have been too complex or ambiguous.');
         }
-        
-        return summary;
+
+        return Buffer.from(imagePart.inlineData.data, 'base64');
+
     } catch (error) {
-        console.error('Error summarizing text:', error);
-        return truncateAtSentence(text, config.MAX_RESPONSE_LENGTH - 50) + '\n\n*(Response was too long and had to be truncated)*';
+        console.error('Error in generateImage:', error);
+        if (error instanceof Error) {
+            if (error.message.includes('blocked') || error.message.includes('API did not return')) {
+                throw error;
+            }
+        }
+        throw new Error('Failed to generate the image. The AI service might be busy or the prompt could not be processed.');
     }
 }
 
-/**
- * Truncates text at the last complete sentence within the limit.
- */
-function truncateAtSentence(text: string, maxLength: number): string {
-    if (text.length <= maxLength) {
-        return text;
-    }
-    
-    const truncated = text.slice(0, maxLength);
-    const lastSentenceEnd = Math.max(
-        truncated.lastIndexOf('.'),
-        truncated.lastIndexOf('!'),
-        truncated.lastIndexOf('?'),
-        truncated.lastIndexOf('\n')
-    );
-    
-    if (lastSentenceEnd > maxLength * 0.5) {
-        return truncated.slice(0, lastSentenceEnd + 1);
-    }
-    
-    const lastSpace = truncated.lastIndexOf(' ');
-    return lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated;
-}
 
 /**
  * Generates a response from Gemini based on the conversation history and a new query.
  */
 export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
+    // THIS FUNCTION REMAINS THE SAME AS THE ORIGINAL
     try {
         const modelType = getModelForQuery(query);
         const model = modelType === 'pro' ? proModel : flashModel;
