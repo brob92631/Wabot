@@ -6,7 +6,7 @@ import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
 import * as WebScrapingService from '../services/webScraping.service';
-import *s UserProfileService from '../services/userProfile.service';
+import * as UserProfileService from '../services/userProfile.service';
 
 // --- Embed Utilities ---
 const createEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Blurple).setDescription(desc);
