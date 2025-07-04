@@ -1,6 +1,6 @@
 // src/handlers/messageCreate.handler.ts
 
-import { Message, EmbedBuilder, Colors, TextBasedChannel } from 'discord.js';
+import { Message, EmbedBuilder, Colors, TextChannel } from 'discord.js';
 import { config } from '../config';
 import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
@@ -20,8 +20,8 @@ export async function handleMessageCreate(message: Message) {
     // --- GUARDS ---
     if (message.author.bot) return;
 
-    // FORCE TYPE CASTING - This will definitely work
-    const channel = message.channel as TextBasedChannel;
+    // Type cast to TextChannel - this will work
+    const channel = message.channel as TextChannel;
     
     if (botState.isMaintenance && message.author.id !== config.BOT_OWNER_ID) {
         return;
