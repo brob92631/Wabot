@@ -1,6 +1,6 @@
 // src/handlers/messageCreate.handler.ts
 
-import { Message, EmbedBuilder, Colors } from 'discord.js';
+import { Message, EmbedBuilder, Colors, TextBasedChannel } from 'discord.js';
 import { config } from '../config';
 import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
@@ -20,15 +20,8 @@ export async function handleMessageCreate(message: Message) {
     // --- GUARDS ---
     if (message.author.bot) return;
 
-    // THE OFFICIAL SOLUTION: Use the built-in type guard.
-    // This correctly narrows the type of `message.channel` to one that is guaranteed
-    // to have .send() and .sendTyping() methods.
-    if (!message.channel.isTextBased()) {
-        return;
-    }
-    
-    // Store the channel with proper typing to ensure TypeScript understands
-    const channel = message.channel;
+    // FORCE TYPE CASTING - This will definitely work
+    const channel = message.channel as TextBasedChannel;
     
     if (botState.isMaintenance && message.author.id !== config.BOT_OWNER_ID) {
         return;
@@ -88,10 +81,9 @@ export async function handleMessageCreate(message: Message) {
             }
             // --- Commands that require Gemini ---
             default: {
-                // Use the stored channel variable instead of message.channel
                 await channel.sendTyping();
                 
-                let prompt = content; // Use the full content as the default prompt
+                let prompt = content;
 
                 // Pre-process specific commands
                 if (command === 'summarize' || command === 'extract') {
@@ -121,7 +113,6 @@ export async function handleMessageCreate(message: Message) {
                     return;
                 }
                 
-                // Safely split and send long messages
                 if (trimmed.length <= 2000) {
                     await message.reply(trimmed);
                 } else {
