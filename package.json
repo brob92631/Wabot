@@ -1,3 +1,5 @@
+// Wabot-main/package.json
+
 {
   "name": "wabot",
   "version": "1.0.0",
@@ -13,6 +15,7 @@
   "license": "ISC",
   "dependencies": {
     "@google/generative-ai": "^0.15.0",
+    "@google/genai": "^1.8.0",
     "discord.js": "^14.17.0",
     "dotenv": "^16.4.5",
     "axios": "^1.7.2",
