@@ -22,11 +22,14 @@ export const config = {
     // Gemini API settings
     GEMINI_MODELS: {
         // Use latest models for best performance
-        flash: 'gemini-2.5-flash', // Switched to 2.5 for better performance
+        flash: 'gemini-2.5-flash',
         pro: 'gemini-2.5-pro',
-        // New dedicated model for image generation
-        imagen: 'models/imagen-4.0-generate-preview-06-06' // Using the latest Imagen 3 model
+        // New dedicated model for Text-to-Speech
+        tts: 'gemini-2.5-pro-preview-tts',
     },
+    
+    // Default voice for the 'say' command
+    TTS_VOICE: 'Zephyr', // Other options include: Puck, Piper, Dash
 
     // Conversation memory settings
     MAX_HISTORY_MESSAGES: 10, // Max number of messages (user + bot) to keep in memory
