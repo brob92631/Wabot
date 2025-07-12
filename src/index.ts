@@ -10,6 +10,7 @@ import { config } from './config';
 dotenv.config();
 
 const { DISCORD_BOT_TOKEN, GEMINI_API_KEY, PORT, BOT_OWNER_ID } = process.env;
+const listenPort = PORT || 3000; // Define the port to use
 
 export const botState = {
     isMaintenance: false,
@@ -42,11 +43,23 @@ client.on('messageCreate', handleMessageCreate);
 client.on('error', (error) => console.error('Discord Client Error:', error));
 
 // This simple server is still useful to confirm the process is running.
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Wabot is alive and kicking!');
-}).listen(PORT || 3000, () => {
-    console.log(`🚀 HTTP keep-alive server listening on port ${PORT || 3000}`);
+});
+
+// --- ADDED ERROR HANDLING ---
+// This prevents the bot from crashing if the port is already in use.
+server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+        console.warn(`⚠️ Port ${listenPort} is already in use. The keep-alive server will not start, but the Discord bot will continue to run.`);
+    } else {
+        console.error('An error occurred with the HTTP keep-alive server:', error);
+    }
+});
+
+server.listen(listenPort, () => {
+    console.log(`🚀 HTTP keep-alive server listening on port ${listenPort}`);
 });
 
 client.login(DISCORD_BOT_TOKEN);
