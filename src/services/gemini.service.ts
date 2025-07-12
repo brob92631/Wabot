@@ -1,17 +1,13 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, FunctionDeclaration, GenerativeModel, FunctionDeclarationSchemaType, Tool } from '@google/generative-ai';
-import { GoogleGenAI } from '@google/genai'; // <-- Using this library for TTS
+import { GoogleGenAI, Content, GenerativeModel, ModelConfig, Part } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Client for standard text generation
-const textGenAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const flashModel = textGenAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
-const proModel = textGenAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
-
-// Client for TTS using the correct library
-const speechGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// Unified client for all Gemini services
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
+const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
 
 /**
@@ -22,42 +18,31 @@ const speechGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 export async function generateSpeech(text: string): Promise<Buffer> {
     console.log(`Generating speech for: "${text.slice(0, 50)}..." using ${config.GEMINI_MODELS.tts}`);
     try {
-        const ttsConfig = {
+        const ttsConfig: ModelConfig = {
             temperature: 0,
-            responseModalities: ['audio'],
-            speechConfig: {
-                voiceConfig: {
-                    prebuiltVoiceConfig: {
-                        voiceName: config.TTS_VOICE,
-                    }
-                }
-            },
+            responseMimeType: 'audio/wav', // Request audio directly
         };
         
-        const contents = [{ role: 'user', parts: [{ text }] }];
-
-        const responseStream = await speechGenAI.models.generateContentStream({
-            model: config.GEMINI_MODELS.tts,
-            config: ttsConfig,
-            contents,
+        const ttsModel = genAI.getGenerativeModel({
+             model: 'tts-1', // A common model for direct TTS
+             generationConfig: {
+                responseMimeType: "audio/wav",
+             },
+             safetySettings: [], // Adjust safety settings if needed
         });
 
-        const audioChunks: Buffer[] = [];
-        for await (const chunk of responseStream) {
-            // Check for the audio data in the chunk
-            const audioData = chunk.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-            if (audioData) {
-                audioChunks.push(Buffer.from(audioData, 'base64'));
-            }
-        }
+        const result = await ttsModel.generateContent({
+            parts: [{ text: `Speak with a ${config.TTS_VOICE} voice. ${text}`}]
+        });
 
-        if (audioChunks.length === 0) {
+        const audioData = result.response.candidates?.[0]?.content.parts?.[0].inlineData?.data;
+
+        if (!audioData) {
             console.error('TTS generation failed: The stream returned no audio data.');
             throw new Error('The AI did not generate any audio. The text might be unsupported or was blocked for safety.');
         }
 
-        // Combine all received audio chunks into a single buffer
-        return Buffer.concat(audioChunks);
+        return Buffer.from(audioData, 'base64');
 
     } catch (error) {
         console.error('Error in generateSpeech:', error);
@@ -68,31 +53,29 @@ export async function generateSpeech(text: string): Promise<Buffer> {
 
 /**
  * Generates a text response from Gemini.
- * (This function and its helpers like callTool and getModelForQuery remain unchanged from the last correct version)
  */
 export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
-    // ... Function content is the same ...
     try {
         const modelType = getModelForQuery(query);
         const model = modelType === 'pro' ? proModel : flashModel;
 
         console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
 
-        let currentSystemInstruction = (config.SYSTEM_PROMPT.parts[0] as { text: string }).text;
+        let systemInstructionText = (config.SYSTEM_PROMPT.parts[0] as Part).text;
         if (userProfile.tone) {
-            currentSystemInstruction += `\n- Adopt a ${userProfile.tone} tone.`;
+            systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
         }
         if (userProfile.persona) {
-            currentSystemInstruction += `\n- Act as a ${userProfile.persona}.`;
+            systemInstructionText += `\n- Act as a ${userProfile.persona}.`;
         }
         if (userProfile.customMemory && Object.keys(userProfile.customMemory).length > 0) {
-            currentSystemInstruction += `\n- Remember the following about the user:`;
+            systemInstructionText += `\n- Remember the following about the user:`;
             for (const key in userProfile.customMemory) {
-                currentSystemInstruction += `\n  - ${key}: ${userProfile.customMemory[key]}`;
+                systemInstructionText += `\n  - ${key}: ${userProfile.customMemory[key]}`;
             }
         }
         
-        const systemInstructionContent: Content = { role: 'system', parts: [{ text: currentSystemInstruction }] };
+        const systemInstruction = { role: 'system', parts: [{ text: systemInstructionText }] };
 
         const chat = model.startChat({
             history,
@@ -102,7 +85,7 @@ export async function generateResponse(history: Content[], query: string, userPr
                 topP: 0.9,
                 topK: 40,
             },
-            systemInstruction: systemInstructionContent,
+            systemInstruction,
         });
 
         const result = await chat.sendMessageStream(query);
