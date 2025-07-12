@@ -1,4 +1,4 @@
-// src/services/userProfile.service.ts
+// Wabot-main/src/services/userProfile.service.ts
 
 import path from 'path';
 
@@ -15,9 +15,15 @@ interface DatabaseSchema {
 let db: any;
 
 export async function initializeUserProfileDB() {
-    // This is the critical fix for Vercel's filesystem.
-    // It writes the database to the one writable directory: /tmp.
-    const file = path.join('/tmp', 'userProfiles.json');
+    // This creates a 'data' folder in your project directory for the database.
+    // This is the correct method for a persistent server.
+    const dataDir = path.join(process.cwd(), 'data');
+    try {
+        await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }));
+    } catch (error) {
+        console.error('Failed to create data directory:', error);
+    }
+    const file = path.join(dataDir, 'userProfiles.json');
 
     const { Low } = await import('lowdb');
     const { JSONFile } = await import('lowdb/node');
@@ -25,19 +31,11 @@ export async function initializeUserProfileDB() {
     const adapter = new JSONFile<DatabaseSchema>(file);
     db = new Low(adapter, { userProfiles: {} });
 
-    try {
-        await db.read();
-    } catch (e) {
-        // If the file doesn't exist, it's okay. LowDB will create it on the first write.
-        console.log("No existing database found. A new one will be created on first write.");
-    }
-    
-    console.log('User profile database initialized. Storage path:', file);
+    await db.read();
+    console.log('User profile database initialized.');
 }
 
-// The rest of the functions in this file remain the same
-// (getProfile, setProfileData, etc.)
-
+// The rest of the functions (getProfile, setProfileData, etc.) are unchanged and correct.
 export function getProfile(userId: string): UserProfile {
     if (!db || !db.data) {
         console.error('Database not initialized.');
