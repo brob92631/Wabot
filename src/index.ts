@@ -48,8 +48,9 @@ const server = http.createServer((req, res) => {
     res.end('Wabot is alive and kicking!');
 });
 
-// --- ADDED ERROR HANDLING ---
-// This prevents the bot from crashing if the port is already in use.
+// --- THIS IS THE PERMANENT FIX ---
+// This code listens for errors on the server. If the port is in use,
+// it prints a warning instead of crashing the whole bot.
 server.on('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE') {
         console.warn(`⚠️ Port ${listenPort} is already in use. The keep-alive server will not start, but the Discord bot will continue to run.`);
