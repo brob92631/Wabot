@@ -1,48 +1,33 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenAI, Content, Part, GenerateContentRequest } from '@google/genai';
+import { GoogleGenerativeAI, Content, Part } from '@google/generative-ai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Unified client for all Gemini services, initialized once
-const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY!);
+// Correctly initialize the client with API key
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+// Get models from the correctly initialized client
 const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
 const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
-const ttsModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.tts });
 
 /**
  * Generates speech from text.
+ * Note: Google Gemini doesn't directly support TTS. This is a placeholder.
+ * You would need to use Google Text-to-Speech API or another TTS service.
  * @param text The text to convert to speech.
  * @returns A Buffer containing the WAV audio data.
  */
 export async function generateSpeech(text: string): Promise<Buffer> {
-    console.log(`Generating speech for: "${text.slice(0, 50)}..." using ${config.GEMINI_MODELS.tts}`);
-    try {
-        // The API expects a simple text part for TTS generation
-        const request: GenerateContentRequest = {
-            contents: [{
-                role: 'user', // Role is conventional here
-                parts: [{ text: `Speak this in a clear, friendly voice: ${text}` }]
-            }]
-        };
-
-        const result = await ttsModel.generateContent(request, { responseMimeType: "audio/wav" });
-        const audioData = result.response.candidates?.[0]?.content.parts?.[0].inlineData?.data;
-
-        if (!audioData) {
-            console.error('TTS generation failed: The API returned no audio data.');
-            throw new Error('The AI did not generate any audio. The text might be unsupported or was blocked for safety.');
-        }
-
-        return Buffer.from(audioData, 'base64');
-
-    } catch (error) {
-        console.error('Error in generateSpeech:', error);
-        throw new Error('Failed to generate the audio. The AI service may be busy or an unknown error occurred.');
-    }
+    console.log(`Speech generation requested for: "${text.slice(0, 50)}..."`);
+    
+    // For now, throw an error as Gemini doesn't support TTS directly
+    throw new Error('Text-to-speech is not available. Please use Google Text-to-Speech API or another TTS service.');
+    
+    // If you implement actual TTS, replace the above with your implementation
+    // const audioBuffer = await yourTTSService.synthesize(text);
+    // return audioBuffer;
 }
-
 
 /**
  * Generates a text response from Gemini.
@@ -55,7 +40,13 @@ export async function generateResponse(history: Content[], query: string, userPr
         console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
 
         // Build the system instruction dynamically based on user profile
-        let systemInstructionText = (config.SYSTEM_PROMPT.parts[0] as Part).text;
+        const systemPromptParts = config.SYSTEM_PROMPT.parts;
+        if (!systemPromptParts || systemPromptParts.length === 0) {
+            throw new Error("System prompt is not configured correctly in config.ts");
+        }
+        
+        let systemInstructionText = (systemPromptParts[0] as Part).text || '';
+        
         if (userProfile.tone) {
             systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
         }
@@ -69,7 +60,10 @@ export async function generateResponse(history: Content[], query: string, userPr
             }
         }
         
-        const systemInstruction = { role: 'system', parts: [{ text: systemInstructionText }] };
+        const systemInstruction = { 
+            role: 'system' as const, 
+            parts: [{ text: systemInstructionText }] 
+        };
 
         const chat = model.startChat({
             history,
