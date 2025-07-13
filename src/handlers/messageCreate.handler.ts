@@ -1,6 +1,6 @@
 // src/handlers/messageCreate.handler.ts
 
-import { Message, EmbedBuilder, Colors, TextChannel, AttachmentBuilder } from 'discord.js';
+import { Message, EmbedBuilder, Colors, TextChannel, AttachmentBuilder, ActivityType } from 'discord.js';
 import { config } from '../config';
 import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
@@ -55,7 +55,7 @@ export async function handleMessageCreate(message: Message) {
                     .addFields(
                         { name: '💬 Core', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`uptime`: Shows how long I\'ve been online.\n`reset`: Clears our conversation history in this channel.' },
                         { name: '🧠 Profile', value: '`set-tone [tone]`: Set my tone (e.g., witty, formal).\n`set-persona [persona]`: Set my persona (e.g., pirate, scientist).\n`remember [key] is [value]`: Teach me something about you.\n`forget [key]`: Make me forget something.\n`show-my-data`: See what I remember about you.\n`reset-profile`: Clears your entire user profile.' },
-                        { name: '✨ AI Features', value: '`say [text]`: I\'ll speak the text in an audio message.\n`debate [topic]`: I\'ll take a stance and debate you.\n`review [code]`: I\'ll review a code snippet for you.\n`summarize [url]`: I\'ll summarize the content of a webpage.\n`extract [url]`: I\'ll extract the main text from a webpage.' }
+                        { name: '✨ AI Features', value: '`debate [topic]`: I\'ll take a stance and debate you.\n`review [code]`: I\'ll review a code snippet for you.\n`summarize [url]`: I\'ll summarize the content of a webpage.\n`extract [url]`: I\'ll extract the main text from a webpage.\n\n*Note: Text-to-speech is currently unavailable*' }
                     )
                     .setFooter({ text: 'Any other message will start a normal conversation!' });
                 await message.reply({ embeds: [helpEmbed] });
@@ -133,17 +133,8 @@ export async function handleMessageCreate(message: Message) {
                 break;
             }
             case 'say': {
-                const textToSpeak = args.join(' ');
-                if (!textToSpeak) return message.reply({ embeds: [createErrorEmbed('Please provide some text for me to say.')] });
-
-                const thinkingMessage = await message.reply(`🎤 Generating audio for: **"${textToSpeak.slice(0, 50)}..."**`);
-                try {
-                    const audioBuffer = await GeminiService.generateSpeech(textToSpeak);
-                    const attachment = new AttachmentBuilder(audioBuffer, { name: 'wabot-speech.wav' });
-                    await thinkingMessage.edit({ content: `Here is your audio, <@${message.author.id}>!`, files: [attachment], embeds: [] });
-                } catch (e: any) {
-                    await thinkingMessage.edit({ content: '', embeds: [createErrorEmbed(e.message ?? "An unknown error occurred during audio generation.")] });
-                }
+                // TTS is not available with Gemini
+                await message.reply({ embeds: [createErrorEmbed('Text-to-speech is currently unavailable. Please use Google Text-to-Speech API or another TTS service.')] });
                 break;
             }
             default: {
