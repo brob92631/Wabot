@@ -1,6 +1,6 @@
 // src/index.ts
 
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { config } from './config';
 import { initializeUserProfileDB } from './services/userProfile.service';
 import { handleMessageCreate } from './handlers/messageCreate.handler';
@@ -32,7 +32,7 @@ client.once('ready', async () => {
     await initializeUserProfileDB();
     
     // Set bot activity
-    client.user?.setActivity('with Discord API', { type: 'PLAYING' });
+    client.user?.setActivity('with Discord API', { type: ActivityType.Playing });
 });
 
 // Message create event
