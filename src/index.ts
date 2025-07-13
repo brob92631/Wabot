@@ -1,123 +1,54 @@
-// src/services/gemini.service.ts
+// src/index.ts
 
-import { GoogleGenAI, Content, Part } from '@google/genai';
-import { config } from '../config';
-import { UserProfile } from './userProfile.service';
+import { Client, GatewayIntentBits } from 'discord.js';
+import { config } from './config';
+import { initializeUserProfileDB } from './services/userProfile.service';
+import { handleMessageCreate } from './handlers/messageCreate.handler';
+import dotenv from 'dotenv';
 
-// Correctly initialize the client with an options object
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// Load environment variables
+dotenv.config();
 
-// Get models from the correctly initialized client
-const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
-const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
-const ttsModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.tts });
+// Bot state that can be exported
+export const botState = {
+    startTime: Date.now(),
+    isMaintenance: false,
+};
 
-/**
- * Generates speech from text.
- * @param text The text to convert to speech.
- * @returns A Buffer containing the WAV audio data.
- */
-export async function generateSpeech(text: string): Promise<Buffer> {
-    console.log(`Generating speech for: "${text.slice(0, 50)}..." using ${config.GEMINI_MODELS.tts}`);
-    try {
-        const result = await ttsModel.generateContent({
-            parts: [{ text: `Speak with a ${config.TTS_VOICE} voice. ${text}`}]
-        });
+// Create Discord client
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ],
+});
 
-        // The API returns the audio data in the first part of the first candidate.
-        const audioData = result.response.candidates?.[0]?.content.parts?.[0].inlineData?.data;
+// Bot ready event
+client.once('ready', async () => {
+    console.log(`✅ ${client.user?.tag} is now online!`);
+    
+    // Initialize user profile database
+    await initializeUserProfileDB();
+    
+    // Set bot activity
+    client.user?.setActivity('with Discord API', { type: 'PLAYING' });
+});
 
-        if (!audioData) {
-            console.error('TTS generation failed: The API returned no audio data.');
-            throw new Error('The AI did not generate any audio. The text might be unsupported or was blocked for safety.');
-        }
+// Message create event
+client.on('messageCreate', handleMessageCreate);
 
-        return Buffer.from(audioData, 'base64');
+// Error handling
+client.on('error', (error) => {
+    console.error('Discord client error:', error);
+});
 
-    } catch (error) {
-        console.error('Error in generateSpeech:', error);
-        throw new Error('Failed to generate the audio. The AI service may be busy or an unknown error occurred.');
-    }
-}
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled promise rejection:', error);
+});
 
-
-/**
- * Generates a text response from Gemini.
- */
-export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
-    try {
-        const modelType = getModelForQuery(query);
-        const model = modelType === 'pro' ? proModel : flashModel;
-
-        console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
-
-        // Safely access the system prompt text
-        const systemPromptParts = config.SYSTEM_PROMPT.parts;
-        if (!systemPromptParts || systemPromptParts.length === 0) {
-            throw new Error("System prompt is not configured correctly in config.ts");
-        }
-        let systemInstructionText = (systemPromptParts[0] as Part).text || '';
-
-        // Build the system instruction dynamically based on user profile
-        if (userProfile.tone) {
-            systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
-        }
-        if (userProfile.persona) {
-            systemInstructionText += `\n- Act as a ${userProfile.persona}.`;
-        }
-        if (userProfile.customMemory && Object.keys(userProfile.customMemory).length > 0) {
-            systemInstructionText += `\n- Remember the following about the user:`;
-            for (const key in userProfile.customMemory) {
-                systemInstructionText += `\n  - ${key}: ${userProfile.customMemory[key]}`;
-            }
-        }
-        
-        const systemInstruction = { role: 'system', parts: [{ text: systemInstructionText }] };
-
-        const chat = model.startChat({
-            history,
-            generationConfig: {
-                maxOutputTokens: 4096,
-                temperature: 0.7,
-                topP: 0.9,
-                topK: 40,
-            },
-            systemInstruction,
-        });
-
-        const result = await chat.sendMessageStream(query);
-        
-        let fullResponse = '';
-        for await (const chunk of result.stream) {
-            fullResponse += chunk.text();
-        }
-
-        if (!fullResponse || fullResponse.trim().length < 1) {
-            console.warn('Generated response is empty.');
-            return "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
-        }
-
-        return fullResponse.trim();
-        
-    } catch (error) {
-        console.error('Error generating response:', error);
-        
-        if (error instanceof Error) {
-            if (error.message.includes('quota') || error.message.includes('rate limit')) {
-                return "I'm experiencing high usage right now. Please try again in a moment.";
-            } else if (error.message.includes('safety')) {
-                return "I can't provide a response to that request due to my safety guidelines. Please try asking something else.";
-            }
-        }
-        throw error;
-    }
-}
-
-function getModelForQuery(query: string): 'pro' | 'flash' {
-    const queryLower = query.toLowerCase();
-    const complexKeywords = ['code', 'explain', 'analyze', 'review', 'summarize', 'extract', 'debate'];
-    if (complexKeywords.some(keyword => queryLower.includes(keyword)) || query.length > 200) {
-        return 'pro';
-    }
-    return 'flash';
-}
+// Start the bot
+client.login(process.env.DISCORD_BOT_TOKEN).catch((error) => {
+    console.error('Failed to login:', error);
+    process.exit(1);
+});
