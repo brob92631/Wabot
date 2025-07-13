@@ -1,6 +1,6 @@
 // src/services/conversation.service.ts
 
-import { Content } from '@google/genai'; // Corrected import
+import { Content } from '@google/generative-ai';
 import { config } from '../config';
 
 // In-memory cache for conversation histories. Key: channelId, Value: message history
