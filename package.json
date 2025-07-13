@@ -12,7 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google/genai": "^1.8.0",
+    "@google/generative-ai": "^0.21.0",
     "discord.js": "^14.17.0",
     "dotenv": "^16.4.5",
     "axios": "^1.7.2",
