@@ -1,5 +1,5 @@
 // src/config.ts
-import { Content } from '@google/genai'; // Corrected import
+import { Content } from '@google/generative-ai';
 
 export const config = {
     // Bot settings
@@ -21,12 +21,12 @@ export const config = {
 
     // Gemini API settings
     GEMINI_MODELS: {
-        flash: 'gemini-2.5-flash', // Updated to a current model name
-        pro: 'gemini-2.5-pro',     // Updated to a current model name
-        tts: 'tts-1',              // A standard model for TTS
+        flash: 'gemini-2.5-flash',
+        pro: 'gemini-2.5-pro',
+        tts: 'a', // Note: Gemini doesn't support TTS directly
     },
     
-    TTS_VOICE: 'Zephyr', // This is an example; TTS models have specific voice names
+    TTS_VOICE: 'Zephyr',
     MAX_HISTORY_MESSAGES: 10,
     MAX_RESPONSE_LENGTH: 2000,
 };
