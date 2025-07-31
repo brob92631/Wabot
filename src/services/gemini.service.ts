@@ -126,7 +126,7 @@ export async function generateResponse(history: Content[], query: string, userPr
 
 function getModelForQuery(query: string): 'pro' | 'flash' {
     const queryLower = query.toLowerCase();
-    const complexKeywords = ['code', 'explain', 'analyze', 'review', 'debate', 'what is', 'who is', 'how to'];
+    const complexKeywords = ['code', 'explain', 'analyze', 'review', 'debate', 'what is', 'who is', 'how to', 'which is', 'which are'];
     const hasUrl = /(https?:\/\/[^\s]+)/.test(query);
 
     if (hasUrl || complexKeywords.some(keyword => queryLower.startsWith(keyword)) || query.length > 150) {
