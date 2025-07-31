@@ -5,13 +5,16 @@ import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
-const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
-// Define the tools to be used by the model for grounding
-const tools: Tool[] = [
-    { googleSearch: {} }
-];
+// Initialize models with their specific configurations
+const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
+
+// This is the corrected way to enable Google Search grounding
+const proModel = genAI.getGenerativeModel({
+    model: config.GEMINI_MODELS.pro,
+    tools: [{ googleSearch: {} }],
+});
+
 
 /**
  * Analyzes a conversation to extract or update a persistent fact about the user.
@@ -100,7 +103,7 @@ export async function generateResponse(history: Content[], query: string, userPr
             history,
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
             systemInstruction,
-            tools: modelType === 'pro' ? tools : undefined, // Only use tools with the Pro model
+            // The 'tools' are now part of the model initialization, so no need to pass them here.
         });
 
         const result = await chat.sendMessageStream(query);
@@ -126,7 +129,6 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
     const complexKeywords = ['code', 'explain', 'analyze', 'review', 'debate', 'what is', 'who is', 'how to'];
     const hasUrl = /(https?:\/\/[^\s]+)/.test(query);
 
-    // Use Pro model for complex tasks, long queries, URLs, or specific question patterns
     if (hasUrl || complexKeywords.some(keyword => queryLower.startsWith(keyword)) || query.length > 150) {
         console.log("Switching to Pro model for complex query, URL, or grounding.");
         return 'pro';
