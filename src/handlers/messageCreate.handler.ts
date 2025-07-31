@@ -11,12 +11,8 @@ import * as UserProfileService from '../services/userProfile.service';
 const createSuccessEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ ${desc}`);
 const createErrorEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Red).setTitle('Error').setDescription(`❌ ${desc}`);
 
-/**
- * Main handler for incoming messages.
- */
 export async function handleMessageCreate(message: Message) {
     if (message.author.bot) return;
-
     const channel = message.channel as TextChannel;
     if (botState.isMaintenance && message.author.id !== config.BOT_OWNER_ID) return;
 
@@ -29,8 +25,7 @@ export async function handleMessageCreate(message: Message) {
         : message.content.substring(config.COMMAND_PREFIX.length).trim();
 
     if (!content && isMentioned) {
-        await message.reply({ embeds: [new EmbedBuilder().setColor(Colors.Blurple).setDescription(`Hi there! Use \`${config.COMMAND_PREFIX}help\` to see what I can do.`)] });
-        return;
+        return message.reply({ embeds: [new EmbedBuilder().setColor(Colors.Blurple).setDescription(`Hi there! Use \`${config.COMMAND_PREFIX}help\` to see what I can do.`)] });
     }
 
     const args = content.split(/ +/);
@@ -42,13 +37,12 @@ export async function handleMessageCreate(message: Message) {
             case 'help': {
                 const helpEmbed = new EmbedBuilder()
                     .setColor(Colors.Blurple).setTitle('🤖 Wabot Help')
-                    .setDescription(`I can automatically remember details from our conversation to personalize our interactions. You are in full control of this memory.`)
+                    .setDescription(`I automatically learn from our conversations to personalize our interactions. You are in full control of this memory.`)
                     .addFields(
-                        { name: '💬 Core Commands', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`reset`: Clears our conversation history in this channel.' },
-                        { name: '🧠 Memory & Profile', value: '`toggle-memory [on|off]`: Turns my memory on or off for you.\n`remember [key] is [value]`: Manually teach me something.\n`forget [key]`: Makes me forget a specific memory (manual or automatic).\n`show-my-data`: See everything I remember about you.\n`reset-profile`: Clears your entire user profile.' },
-                        { name: '✨ AI Features', value: '`summarize [url]`: I\'ll summarize a webpage.\n`review [code]`: I\'ll review a code snippet.' }
-                    )
-                    .setFooter({ text: 'Any other message will start a normal conversation!' });
+                        { name: '💬 Core Commands', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`reset`: Clears our conversation history.' },
+                        { name: '🧠 Memory & Profile', value: '`toggle-memory [on|off]`: Turns my memory on or off.\n`forget`: Wipes all of my memories about you.\n`forget [key]`: Makes me forget one specific thing.\n`show-my-data`: See everything I remember about you.\n`reset-profile`: Clears your entire profile (memories, tone, etc.).' },
+                        { name: '✨ AI Features', value: '`summarize [url]`: Summarizes a webpage.\n`review [code]`: Reviews a code snippet.' }
+                    );
                 await message.reply({ embeds: [helpEmbed] });
                 break;
             }
@@ -66,26 +60,21 @@ export async function handleMessageCreate(message: Message) {
                 const option = args[0]?.toLowerCase();
                 if (option !== 'on' && option !== 'off') return message.reply({ embeds: [createErrorEmbed('Please specify `on` or `off`.')] });
                 await UserProfileService.setProfileData(message.author.id, { memoryEnabled: option === 'on' });
-                await message.reply({ embeds: [createSuccessEmbed(`Memory has been turned **${option.toUpperCase()}** for you.`)] });
-                break;
-            }
-            case 'remember': {
-                const memoryString = args.join(' ');
-                const match = memoryString.match(/(.+) is (.+)/i);
-                if (!match) return message.reply({ embeds: [createErrorEmbed('Please use the format `remember [key] is [value]`.')] });
-                const [, key, value] = match;
-                await UserProfileService.addCustomMemory(message.author.id, key.trim(), value.trim());
-                await message.reply({ embeds: [createSuccessEmbed(`Okay, I'll remember that **${key.trim()}** is **${value.trim()}**.`)] });
+                await message.reply({ embeds: [createSuccessEmbed(`Memory has been turned **${option.toUpperCase()}**.`)] });
                 break;
             }
             case 'forget': {
-                const key = args.join(' ');
-                if (!key) return message.reply({ embeds: [createErrorEmbed('Please tell me what to forget.')] });
-                const success = await UserProfileService.removeMemory(message.author.id, key);
-                if (success) {
-                    await message.reply({ embeds: [createSuccessEmbed(`Okay, I've forgotten about **${key}**.`)] });
+                const key = args.join(' ').trim();
+                if (!key) {
+                    await UserProfileService.clearAllMemory(message.author.id);
+                    await message.reply({ embeds: [createSuccessEmbed('Okay, I\'ve wiped all of my learned memories about you.')] });
                 } else {
-                    await message.reply({ embeds: [createErrorEmbed(`I don't have a memory with the key **${key}**.`)] });
+                    const success = await UserProfileService.removeMemory(message.author.id, key);
+                    if (success) {
+                        await message.reply({ embeds: [createSuccessEmbed(`Okay, I've forgotten about **${key}**.`)] });
+                    } else {
+                        await message.reply({ embeds: [createErrorEmbed(`I don't have a memory with the key **${key}**.`)] });
+                    }
                 }
                 break;
             }
@@ -97,15 +86,10 @@ export async function handleMessageCreate(message: Message) {
                 if (profile.tone) embed.addFields({ name: 'Custom Tone', value: profile.tone });
                 if (profile.persona) embed.addFields({ name: 'Custom Persona', value: profile.persona });
 
-                const customMemory = profile.customMemory && Object.keys(profile.customMemory).length > 0
-                    ? Object.entries(profile.customMemory).map(([k, v]) => `• **${k}**: ${v}`).join('\n')
-                    : '*None*';
-                embed.addFields({ name: 'Manual Memories', value: customMemory });
-
                 const autoMemory = profile.automaticMemory && Object.keys(profile.automaticMemory).length > 0
                     ? Object.entries(profile.automaticMemory).map(([k, v]) => `• **${k}**: ${v}`).join('\n')
                     : '*None yet! Just keep chatting with me.*';
-                embed.addFields({ name: 'Automatic Memories', value: autoMemory });
+                embed.addFields({ name: 'Learned Memories', value: autoMemory });
 
                 await message.reply({ embeds: [embed] });
                 break;
@@ -119,8 +103,7 @@ export async function handleMessageCreate(message: Message) {
                 await channel.sendTyping();
                 
                 let prompt = content;
-                // Handle complex commands like summarize, review, etc.
-                // This part remains the same...
+                // Complex command handling (summarize, etc.) remains the same...
 
                 const history = ConversationService.getHistory(channel.id);
                 const userProfile = UserProfileService.getProfile(message.author.id);
@@ -129,24 +112,20 @@ export async function handleMessageCreate(message: Message) {
                 ConversationService.addMessageToHistory(channel.id, 'user', content);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
-                // --- AUTOMATIC MEMORY EXTRACTION (RUNS IN BACKGROUND) ---
-                if (userProfile.memoryEnabled && command !== 'show-my-data') {
-                     GeminiService.extractMemoryFromConversation(content, responseText)
+                // --- SMARTER AUTOMATIC MEMORY EXTRACTION ---
+                if (userProfile.memoryEnabled) {
+                     GeminiService.extractMemoryFromConversation(content, userProfile)
                         .then(memory => {
                             if (memory) {
-                                UserProfileService.addAutomaticMemory(message.author.id, memory.key, memory.value);
+                                UserProfileService.setAutomaticMemory(message.author.id, memory.key, memory.value);
                             }
                         })
                         .catch(console.error);
                 }
 
-                if (responseText.length <= 2000) {
-                    await message.reply(responseText);
-                } else {
-                    const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
-                    for (const chunk of chunks) {
-                        await channel.send(chunk);
-                    }
+                const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
+                for (const chunk of chunks) {
+                    await message.reply(chunk);
                 }
                 break;
             }
