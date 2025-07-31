@@ -39,7 +39,6 @@ export async function generateResponse(history: Content[], query: string, userPr
 
         console.log(`Using ${modelType.toUpperCase()} model for query: "${query.slice(0, 50)}..."`);
 
-        // Build the system instruction dynamically based on user profile
         const systemPromptParts = config.SYSTEM_PROMPT.parts;
         if (!systemPromptParts || systemPromptParts.length === 0) {
             throw new Error("System prompt is not configured correctly in config.ts");
@@ -47,16 +46,19 @@ export async function generateResponse(history: Content[], query: string, userPr
         
         let systemInstructionText = (systemPromptParts[0] as Part).text || '';
         
-        if (userProfile.tone) {
-            systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
-        }
-        if (userProfile.persona) {
-            systemInstructionText += `\n- Act as a ${userProfile.persona}.`;
-        }
-        if (userProfile.customMemory && Object.keys(userProfile.customMemory).length > 0) {
-            systemInstructionText += `\n- Remember the following about the user:`;
-            for (const key in userProfile.customMemory) {
-                systemInstructionText += `\n  - ${key}: ${userProfile.customMemory[key]}`;
+        // Only add personal data if memory is enabled
+        if (userProfile.memoryEnabled) {
+            if (userProfile.tone) {
+                systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
+            }
+            if (userProfile.persona) {
+                systemInstructionText += `\n- Act as a ${userProfile.persona}.`;
+            }
+            if (userProfile.customMemory && Object.keys(userProfile.customMemory).length > 0) {
+                systemInstructionText += `\n- Remember the following about the user:`;
+                for (const key in userProfile.customMemory) {
+                    systemInstructionText += `\n  - ${key}: ${userProfile.customMemory[key]}`;
+                }
             }
         }
         
@@ -111,4 +113,4 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
         return 'pro';
     }
     return 'flash';
-}
+}```
