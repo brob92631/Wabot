@@ -6,6 +6,7 @@ export interface UserProfile {
     tone?: string;
     persona?: string;
     customMemory?: Record<string, string>;
+    memoryEnabled?: boolean; // Added for memory toggle
 }
 
 interface DatabaseSchema {
@@ -15,8 +16,6 @@ interface DatabaseSchema {
 let db: any;
 
 export async function initializeUserProfileDB() {
-    // This creates a 'data' folder in your project directory for the database.
-    // This is the correct method for a persistent server.
     const dataDir = path.join(process.cwd(), 'data');
     try {
         await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }));
@@ -35,13 +34,17 @@ export async function initializeUserProfileDB() {
     console.log('User profile database initialized.');
 }
 
-// The rest of the functions (getProfile, setProfileData, etc.) are unchanged and correct.
 export function getProfile(userId: string): UserProfile {
     if (!db || !db.data) {
         console.error('Database not initialized.');
-        return {};
+        return { memoryEnabled: true }; // Default to true
     }
-    return db.data.userProfiles[userId] || {};
+    const profile = db.data.userProfiles[userId] || {};
+    // Default memory to enabled if not explicitly set
+    if (profile.memoryEnabled === undefined) {
+        profile.memoryEnabled = true;
+    }
+    return profile;
 }
 
 export async function setProfileData(userId: string, data: Partial<UserProfile>) {
