@@ -5,7 +5,8 @@ import { config } from '../config';
 import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
-import * as WebScrapingService from '../services/webScraping.service';
+// No longer need our own web scraper
+// import * as WebScrapingService from '../services/webScraping.service';
 import * as UserProfileService from '../services/userProfile.service';
 
 const createSuccessEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ ${desc}`);
@@ -37,11 +38,11 @@ export async function handleMessageCreate(message: Message) {
             case 'help': {
                 const helpEmbed = new EmbedBuilder()
                     .setColor(Colors.Blurple).setTitle('🤖 Wabot Help')
-                    .setDescription(`I automatically learn from our conversations to personalize our interactions. You are in full control of this memory.`)
+                    .setDescription(`I can now automatically search Google and understand URLs to give you the best answers. Just ask me a question or include a link!`)
                     .addFields(
                         { name: '💬 Core Commands', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`reset`: Clears our conversation history.' },
                         { name: '🧠 Memory & Profile', value: '`toggle-memory [on|off]`: Turns my memory on or off.\n`forget`: Wipes all of my memories about you.\n`forget [key]`: Makes me forget one specific thing.\n`show-my-data`: See everything I remember about you.\n`reset-profile`: Clears your entire profile (memories, tone, etc.).' },
-                        { name: '✨ AI Features', value: '`summarize [url]`: Summarizes a webpage.\n`review [code]`: Reviews a code snippet.' }
+                        { name: '✨ Other AI Features', value: '`review [code]`: Reviews a code snippet.' }
                     );
                 await message.reply({ embeds: [helpEmbed] });
                 break;
@@ -103,7 +104,17 @@ export async function handleMessageCreate(message: Message) {
                 await channel.sendTyping();
                 
                 let prompt = content;
-                // Complex command handling (summarize, etc.) remains the same...
+                
+                // Special command for 'review' which requires specific prompt formatting.
+                // The 'summarize' logic is removed as the model handles URLs automatically.
+                if (command === 'review') {
+                    const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
+                    if (!codeBlockMatch) {
+                        await message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block (e.g., \\`\\`\\`js ... \\`\\`\\`).')] });
+                        return;
+                    }
+                    prompt = `Please provide a detailed review of the following code snippet. Analyze it for potential bugs, suggest improvements for performance and readability, and explain what the code does:\n\n${codeBlockMatch[0]}`;
+                }
 
                 const history = ConversationService.getHistory(channel.id);
                 const userProfile = UserProfileService.getProfile(message.author.id);
@@ -112,7 +123,6 @@ export async function handleMessageCreate(message: Message) {
                 ConversationService.addMessageToHistory(channel.id, 'user', content);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
-                // --- SMARTER AUTOMATIC MEMORY EXTRACTION ---
                 if (userProfile.memoryEnabled) {
                      GeminiService.extractMemoryFromConversation(content, userProfile)
                         .then(memory => {
