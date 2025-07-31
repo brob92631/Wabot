@@ -113,4 +113,4 @@ function getModelForQuery(query: string): 'pro' | 'flash' {
         return 'pro';
     }
     return 'flash';
-}```
+}
