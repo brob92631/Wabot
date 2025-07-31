@@ -54,7 +54,7 @@ export async function handleMessageCreate(message: Message) {
                     .setDescription(`You can mention me or use the prefix \`${config.COMMAND_PREFIX}\`. I remember conversations in each channel.`)
                     .addFields(
                         { name: '💬 Core', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`uptime`: Shows how long I\'ve been online.\n`reset`: Clears our conversation history in this channel.' },
-                        { name: '🧠 Profile', value: '`set-tone [tone]`: Set my tone (e.g., witty, formal).\n`set-persona [persona]`: Set my persona (e.g., pirate, scientist).\n`remember [key] is [value]`: Teach me something about you.\n`forget [key]`: Make me forget something.\n`show-my-data`: See what I remember about you.\n`reset-profile`: Clears your entire user profile.' },
+                        { name: '🧠 Profile & Memory', value: '`toggle-memory [on|off]`: Turn my memory of your profile on or off.\n`set-tone [tone]`: Set my tone (e.g., witty, formal).\n`set-persona [persona]`: Set my persona (e.g., pirate, scientist).\n`remember [key] is [value]`: Teach me something about you.\n`forget [key]`: Make me forget something.\n`show-my-data`: See what I remember about you.\n`reset-profile`: Clears your entire user profile.' },
                         { name: '✨ AI Features', value: '`debate [topic]`: I\'ll take a stance and debate you.\n`review [code]`: I\'ll review a code snippet for you.\n`summarize [url]`: I\'ll summarize the content of a webpage.\n`extract [url]`: I\'ll extract the main text from a webpage.\n\n*Note: Text-to-speech is currently unavailable*' }
                     )
                     .setFooter({ text: 'Any other message will start a normal conversation!' });
@@ -77,6 +77,16 @@ export async function handleMessageCreate(message: Message) {
             case 'reset': {
                 ConversationService.clearHistory(channel.id);
                 await message.reply({ embeds: [createSuccessEmbed('Conversation history cleared.')] });
+                break;
+            }
+            case 'toggle-memory': {
+                const option = args[0]?.toLowerCase();
+                if (option !== 'on' && option !== 'off') {
+                    return message.reply({ embeds: [createErrorEmbed('Please specify `on` or `off`. E.g., `toggle-memory on`.')] });
+                }
+                const isEnabled = option === 'on';
+                await UserProfileService.setProfileData(message.author.id, { memoryEnabled: isEnabled });
+                await message.reply({ embeds: [createSuccessEmbed(`Memory has been turned **${option.toUpperCase()}** for you.`)] });
                 break;
             }
             case 'set-tone': {
@@ -113,8 +123,11 @@ export async function handleMessageCreate(message: Message) {
                 const profile = UserProfileService.getProfile(message.author.id);
                 const embed = new EmbedBuilder().setColor(Colors.Blurple).setTitle(`${message.author.username}'s Profile Data`).setTimestamp();
                 const hasData = profile && (profile.tone || profile.persona || (profile.customMemory && Object.keys(profile.customMemory).length > 0));
+
+                embed.addFields({ name: 'Memory Status', value: `Memory is currently **${profile.memoryEnabled ? 'ON' : 'OFF'}**.` });
+
                 if (!hasData) {
-                    embed.setDescription("I don't have any data stored for you yet!");
+                    embed.setDescription("I don't have any other data stored for you yet!");
                 } else {
                     embed.setDescription("Here's what I know about you. Use `forget [key]` or `reset-profile` to remove data.");
                     if (profile.tone) embed.addFields({ name: 'Tone', value: profile.tone });
@@ -133,7 +146,6 @@ export async function handleMessageCreate(message: Message) {
                 break;
             }
             case 'say': {
-                // TTS is not available with Gemini
                 await message.reply({ embeds: [createErrorEmbed('Text-to-speech is currently unavailable. Please use Google Text-to-Speech API or another TTS service.')] });
                 break;
             }
@@ -159,7 +171,7 @@ export async function handleMessageCreate(message: Message) {
                 } else if (command === 'review') {
                     const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
                     if (!codeBlockMatch) {
-                        await message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block (e.g., \\`\\`\\`js ... \\`\\`\\`).')] });
+                        await message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block (e.g., \\`\\`\\`js ... \\`\\`\\`/).')] });
                         return;
                     }
                     prompt = `Please provide a detailed review of the following code snippet. Analyze it for potential bugs, suggest improvements for performance and readability, and explain what the code does:\n\n${codeBlockMatch[0]}`;
