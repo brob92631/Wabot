@@ -8,40 +8,57 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
 const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
 
-
 /**
- * Analyzes a conversation to extract a persistent fact about the user.
- * @returns A key-value pair if a memory is found, otherwise null.
+ * Analyzes a conversation to extract or update a persistent fact about the user.
+ * @returns An object with an action ('ADD' or 'UPDATE') and the key-value pair, or null.
  */
-export async function extractMemoryFromConversation(userQuery: string, modelResponse: string): Promise<{ key: string; value: string; } | null> {
-    const systemPrompt = `You are a memory extraction AI. Your task is to analyze the user's last message.
-Identify if the user stated a new, persistent fact about themselves (like preferences, personal details, location, name, etc.).
-- IGNORE questions, commands, greetings, or temporary states.
-- IGNORE facts about the bot or anyone other than the user.
-- The fact must be explicitly stated by the user.
-If a new, persistent fact is found, output it in the format: key::value
-The 'key' should be a short, 2-4 word summary (e.g., 'favorite color', 'job title', 'hometown').
-The 'value' is the fact itself (e.g., 'blue', 'software engineer', 'New York City').
-If no new, persistent fact is found, output the single word: null`;
+export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ action: 'ADD' | 'UPDATE', key: string, value: string } | null> {
+    const existingMemories = JSON.stringify(userProfile.automaticMemory || {}, null, 2);
+
+    const systemPrompt = `You are a sophisticated AI memory assistant. Your job is to analyze the user's latest message and their existing memories to maintain a profile of core facts.
+
+**EXISTING MEMORIES:**
+${existingMemories}
+
+**YOUR TASK:**
+1.  **Identify New Facts:** Look for new, core, long-term facts about the user (name, job, core preferences, hometown).
+2.  **Identify Updates:** Check if the user is correcting or updating an existing memory.
+
+**RULES:**
+-   IGNORE temporary states ("I'm tired"), conversational filler, questions, or commands.
+-   Focus ONLY on explicit facts about the user.
+
+**OUTPUT FORMAT (IMPORTANT - CHOOSE ONE):**
+-   For a **new** memory: \`ADD::key::value\`
+-   For an **updated** memory: \`UPDATE::key::new_value\`
+-   If **no new facts or updates** are found: \`null\`
+
+**Keys must be short, normalized summaries (e.g., "Favorite Color", "Hometown").**
+
+---
+Analyze the user's latest message now.
+User's message: "${userQuery}"`;
 
     const model = genAI.getGenerativeModel({
         model: config.GEMINI_MODELS.flash,
         systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] }
     });
-
-    const prompt = `User's message: "${userQuery}"\nModel's response: "${modelResponse}"`;
     
     try {
-        const result = await model.generateContent(prompt);
+        const result = await model.generateContent(userQuery); // We only need to send the user's query
         const text = result.response.text().trim();
 
         if (text === 'null' || !text.includes('::')) {
             return null;
         }
 
-        const [key, value] = text.split('::', 2);
-        if (key && value) {
-            return { key: key.trim(), value: value.trim() };
+        const parts = text.split('::');
+        if (parts.length !== 3) return null;
+
+        const [action, key, value] = parts.map(p => p.trim());
+
+        if ((action === 'ADD' || action === 'UPDATE') && key && value) {
+            return { action: action as 'ADD' | 'UPDATE', key, value };
         }
         return null;
     } catch (error) {
@@ -49,7 +66,6 @@ If no new, persistent fact is found, output the single word: null`;
         return null;
     }
 }
-
 
 /**
  * Generates a text response from Gemini.
@@ -61,34 +77,23 @@ export async function generateResponse(history: Content[], query: string, userPr
 
         let systemInstructionText = (config.SYSTEM_PROMPT.parts[0] as Part).text || '';
         
-        // Only add personal data if memory is enabled
         if (userProfile.memoryEnabled) {
             if (userProfile.tone) systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
             if (userProfile.persona) systemInstructionText += `\n- Act as a ${userProfile.persona}.`;
 
-            const hasCustomMemory = userProfile.customMemory && Object.keys(userProfile.customMemory).length > 0;
             const hasAutoMemory = userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0;
-
-            if (hasCustomMemory || hasAutoMemory) {
-                 systemInstructionText += `\n- Remember the following about the user:`;
-                if (hasCustomMemory) {
-                    for (const key in userProfile.customMemory) {
-                        systemInstructionText += `\n  - ${key}: ${userProfile.customMemory[key]}`;
-                    }
-                }
-                if (hasAutoMemory) {
-                    for (const key in userProfile.automaticMemory) {
-                        systemInstructionText += `\n  - ${key}: ${userProfile.automaticMemory[key]}`;
-                    }
+            if (hasAutoMemory) {
+                systemInstructionText += `\n- Remember the following about the user:`;
+                for (const key in userProfile.automaticMemory) {
+                    systemInstructionText += `\n  - ${key}: ${userProfile.automaticMemory[key]}`;
                 }
             }
         }
         
         const systemInstruction = { role: 'system' as const, parts: [{ text: systemInstructionText }] };
-
         const chat = model.startChat({
             history,
-            generationConfig: { maxOutputTokens: 4096, temperature: 0.7, topP: 0.9, topK: 40 },
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
             systemInstruction,
         });
 
@@ -98,18 +103,13 @@ export async function generateResponse(history: Content[], query: string, userPr
             fullResponse += chunk.text();
         }
 
-        if (!fullResponse.trim()) {
-            return "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
-        }
-
-        return fullResponse.trim();
+        return fullResponse.trim() || "I'm sorry, I couldn't generate a proper response. Could you please rephrase your question?";
         
     } catch (error) {
         console.error('Error generating response:', error);
-        if (error instanceof Error && (error.message.includes('quota') || error.message.includes('rate limit'))) {
-            return "I'm experiencing high usage right now. Please try again in a moment.";
-        } else if (error instanceof Error && error.message.includes('safety')) {
-            return "I can't provide a response to that request due to my safety guidelines.";
+        if (error instanceof Error) {
+            if (error.message.includes('quota')) return "I'm experiencing high usage right now. Please try again in a moment.";
+            if (error.message.includes('safety')) return "I can't respond to that due to my safety guidelines.";
         }
         throw error;
     }
@@ -118,8 +118,5 @@ export async function generateResponse(history: Content[], query: string, userPr
 function getModelForQuery(query: string): 'pro' | 'flash' {
     const queryLower = query.toLowerCase();
     const complexKeywords = ['code', 'explain', 'analyze', 'review', 'summarize', 'extract', 'debate'];
-    if (complexKeywords.some(keyword => queryLower.includes(keyword)) || query.length > 200) {
-        return 'pro';
-    }
-    return 'flash';
+    return complexKeywords.some(keyword => queryLower.includes(keyword)) || query.length > 200 ? 'pro' : 'flash';
 }
