@@ -1,13 +1,13 @@
-// src/index.ts
+// src/index.ts (Corrected Version)
+
+import dotenv from 'dotenv';
+// Load environment variables FIRST, before anything else.
+dotenv.config();
 
 import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { config } from './config';
 import { initializeUserProfileDB } from './services/userProfile.service';
 import { handleMessageCreate } from './handlers/messageCreate.handler';
-import dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
 
 // Bot state that can be exported
 export const botState = {
