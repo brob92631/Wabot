@@ -1,12 +1,17 @@
 // src/services/gemini.service.ts
 
-import { GoogleGenerativeAI, Content, Part } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, Part, Tool } from '@google/generative-ai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const flashModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
 const proModel = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
+
+// Define the tools to be used by the model for grounding
+const tools: Tool[] = [
+    { googleSearch: {} }
+];
 
 /**
  * Analyzes a conversation to extract or update a persistent fact about the user.
@@ -45,7 +50,7 @@ User's message: "${userQuery}"`;
     });
     
     try {
-        const result = await model.generateContent(userQuery); // We only need to send the user's query
+        const result = await model.generateContent(userQuery);
         const text = result.response.text().trim();
 
         if (text === 'null' || !text.includes('::')) {
@@ -95,6 +100,7 @@ export async function generateResponse(history: Content[], query: string, userPr
             history,
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
             systemInstruction,
+            tools: modelType === 'pro' ? tools : undefined, // Only use tools with the Pro model
         });
 
         const result = await chat.sendMessageStream(query);
@@ -117,6 +123,13 @@ export async function generateResponse(history: Content[], query: string, userPr
 
 function getModelForQuery(query: string): 'pro' | 'flash' {
     const queryLower = query.toLowerCase();
-    const complexKeywords = ['code', 'explain', 'analyze', 'review', 'summarize', 'extract', 'debate'];
-    return complexKeywords.some(keyword => queryLower.includes(keyword)) || query.length > 200 ? 'pro' : 'flash';
+    const complexKeywords = ['code', 'explain', 'analyze', 'review', 'debate', 'what is', 'who is', 'how to'];
+    const hasUrl = /(https?:\/\/[^\s]+)/.test(query);
+
+    // Use Pro model for complex tasks, long queries, URLs, or specific question patterns
+    if (hasUrl || complexKeywords.some(keyword => queryLower.startsWith(keyword)) || query.length > 150) {
+        console.log("Switching to Pro model for complex query, URL, or grounding.");
+        return 'pro';
+    }
+    return 'flash';
 }
