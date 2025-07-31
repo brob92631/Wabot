@@ -5,8 +5,7 @@ import path from 'path';
 export interface UserProfile {
     tone?: string;
     persona?: string;
-    customMemory?: Record<string, string>;
-    automaticMemory?: Record<string, string>; // Added for automatic memory
+    automaticMemory?: Record<string, string>;
     memoryEnabled?: boolean;
 }
 
@@ -38,13 +37,11 @@ export async function initializeUserProfileDB() {
 export function getProfile(userId: string): UserProfile {
     if (!db || !db.data) {
         console.error('Database not initialized.');
-        return { memoryEnabled: true, customMemory: {}, automaticMemory: {} };
+        return { memoryEnabled: true, automaticMemory: {} };
     }
     const profile = db.data.userProfiles[userId] || {};
     
-    // Set defaults for new features
     if (profile.memoryEnabled === undefined) profile.memoryEnabled = true;
-    if (!profile.customMemory) profile.customMemory = {};
     if (!profile.automaticMemory) profile.automaticMemory = {};
 
     return profile;
@@ -59,42 +56,32 @@ export async function setProfileData(userId: string, data: Partial<UserProfile>)
     await db.write();
 }
 
-export async function addCustomMemory(userId: string, key: string, value: string) {
+// Handles both adding and updating memories
+export async function setAutomaticMemory(userId: string, key: string, value: string) {
     const profile = getProfile(userId);
-    profile.customMemory![key] = value;
-    await setProfileData(userId, { customMemory: profile.customMemory });
-}
-
-// New function for automatic memory
-export async function addAutomaticMemory(userId: string, key: string, value: string) {
-    const profile = getProfile(userId);
-    // Don't overwrite a manual memory with an automatic one
-    if (profile.customMemory && profile.customMemory[key]) {
-        console.log(`Automatic memory for key "${key}" ignored; a manual memory already exists.`);
-        return;
-    }
     profile.automaticMemory![key] = value;
     await setProfileData(userId, { automaticMemory: profile.automaticMemory });
-    console.log(`Automatically remembered for user ${userId}: { ${key}: ${value} }`);
+    console.log(`Automatically set memory for user ${userId}: { ${key}: ${value} }`);
 }
 
-// Updated to handle both memory types
+// Removes a single memory
 export async function removeMemory(userId: string, key: string): Promise<boolean> {
     const profile = getProfile(userId);
-    let memoryFound = false;
-
-    if (profile.customMemory && profile.customMemory[key]) {
-        delete profile.customMemory[key];
-        memoryFound = true;
-    } else if (profile.automaticMemory && profile.automaticMemory[key]) {
+    if (profile.automaticMemory && profile.automaticMemory[key]) {
         delete profile.automaticMemory[key];
-        memoryFound = true;
+        await db.write();
+        return true;
     }
+    return false;
+}
 
-    if (memoryFound) {
+// New: Wipes all of a user's memories
+export async function clearAllMemory(userId: string) {
+    const profile = getProfile(userId);
+    if (profile) {
+        profile.automaticMemory = {};
         await db.write();
     }
-    return memoryFound;
 }
 
 export async function clearProfileData(userId: string) {
