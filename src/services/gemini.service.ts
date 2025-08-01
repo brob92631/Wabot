@@ -1,9 +1,10 @@
-// src/services/gemini.service.ts
+// Wabot-main/src/services/gemini.service.ts (Corrected)
+
 import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Initialize the AI client with the correct class name
+// Initialize the AI client with the correct class name and constructor
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 // Define Google Search grounding tool
@@ -13,7 +14,9 @@ const googleSearchTool: Tool = { googleSearch: {} };
  * Extracts key information from conversation history for memory formation
  */
 export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ action: 'ADD' | 'UPDATE', key: string, value: string } | null> {
-    const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
+    // FIX: Get model instance and call generateContent directly for non-chat tasks.
+    // Setting temperature to 0 makes the output more deterministic and reliable for this specific task.
+    const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash, generationConfig: { temperature: 0 } });
     const existingMemories = JSON.stringify(userProfile.automaticMemory || {}, null, 2);
     const systemPrompt = `You are a sophisticated AI memory assistant. Your job is to analyze the user's latest message and their existing memories to maintain a profile of core facts.
 **EXISTING MEMORIES:**
@@ -58,7 +61,6 @@ ${existingMemories}
 export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
     try {
         const modelName = getModelForQuery(prompt);
-        const model = genAI.getGenerativeModel({ model: modelName });
         const isComplexQuery = modelName === config.GEMINI_MODELS.pro;
         
         // Prepare conversation context
@@ -68,14 +70,19 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
         const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
         if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
             history.push({ role: 'user', parts: [{ text: profileText }] });
-            // Add a simple model part to keep the turn order correct
             history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
         
-        const chat = model.startChat({
-            history,
+        // FIX: Get the generative model with the chat configuration
+        const model = genAI.getGenerativeModel({
+            model: modelName,
             tools: isComplexQuery ? [googleSearchTool] : undefined,
             generationConfig: config.GENERATION
+        });
+
+        // FIX: Start the chat on the configured model instance
+        const chat = model.startChat({
+            history,
         });
 
         const result = await chat.sendMessage(prompt);
