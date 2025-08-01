@@ -1,4 +1,4 @@
-// src/services/gemini.service.ts (FINAL, CORRECTED VERSION)
+// src/services/gemini.service.ts (DEFINITIVE, CORRECTED VERSION)
 
 import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
 import { config } from '../config';
@@ -30,22 +30,22 @@ ${existingMemories}
 -   If **no new facts or updates** are found: \`null\``;
 
     try {
-        // CORRECTED: Using the new genAI.models.generateContent() pattern
         const result = await genAI.models.generateContent({
             model: config.GEMINI_MODELS.flash,
             contents: [
                 { role: "system", parts: [{ text: systemPrompt }] },
                 { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
             ],
-            generationConfig: {
+            // CORRECTED: Parameter is 'config', not 'generationConfig'
+            config: {
                 temperature: 0
             }
         });
         
-        // Perplexity correctly identifies the response is now in result.text
-        const text = result.text.trim();
-
-        if (text === 'null' || !text.includes('::')) return null;
+        // CORRECTED: Safely access optional 'text' property
+        const text = result.text?.trim();
+        if (!text || text === 'null' || !text.includes('::')) return null;
+        
         const parts = text.split('::');
         if (parts.length !== 3) return null;
         const [action, key, value] = parts.map((p: string) => p.trim());
@@ -68,30 +68,31 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
         const modelName = getModelForQuery(prompt);
         const isComplexQuery = modelName === config.GEMINI_MODELS.pro;
         
-        // Build the chat history starting with system prompt
         const history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
         
-        // Add user profile context if available
         const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
         if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
             history.push({ role: 'user', parts: [{ text: profileText }] });
             history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
 
-        // CORRECTED: Using the new genAI.chats.create() pattern
         const chat = genAI.chats.create({
             model: modelName,
             history: history,
-            generationConfig: {
+            // CORRECTED: Parameter is 'config', not 'generationConfig'
+            config: {
                 ...config.GENERATION,
-            },
-            tools: isComplexQuery ? [googleSearchTool] : undefined
+                tools: isComplexQuery ? [googleSearchTool] : undefined
+            }
         });
 
-        // Send the user's message
-        const result = await chat.sendMessage(prompt);
-        // Perplexity correctly identifies the response is now in result.response.text (a property, not a function)
-        return result.response.text || 'I apologize, but I was unable to generate a response at this time.';
+        // CORRECTED: 'sendMessage' expects an object, not a raw string
+        const result = await chat.sendMessage({
+            message: prompt
+        });
+        
+        // CORRECTED: Response text is in 'result.text'
+        return result.text || 'I apologize, but I was unable to generate a response at this time.';
     } catch (error) {
         console.error('Error generating response:', error);
         return 'I encountered an error while processing your request. Please try again.';
