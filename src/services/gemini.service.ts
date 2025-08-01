@@ -1,5 +1,5 @@
 // src/services/gemini.service.ts
-import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
+import { GoogleGenerativeAI, Content, Part, Tool } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
