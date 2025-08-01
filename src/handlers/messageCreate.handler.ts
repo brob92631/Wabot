@@ -5,8 +5,6 @@ import { config } from '../config';
 import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
-// No longer need our own web scraper
-// import * as WebScrapingService from '../services/webScraping.service';
 import * as UserProfileService from '../services/userProfile.service';
 
 const createSuccessEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ ${desc}`);
@@ -26,7 +24,7 @@ export async function handleMessageCreate(message: Message) {
         : message.content.substring(config.COMMAND_PREFIX.length).trim();
 
     if (!content && isMentioned) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor(Colors.Blurple).setDescription(`Hi there! Use \`${config.COMMAND_PREFIX}help\` to see what I can do.`)] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor(config.DISCORD.EMBED_COLOR).setDescription(`Hi there! Use \`${config.COMMAND_PREFIX}help\` to see what I can do.`)] });
     }
 
     const args = content.split(/ +/);
@@ -37,7 +35,7 @@ export async function handleMessageCreate(message: Message) {
         switch (command) {
             case 'help': {
                 const helpEmbed = new EmbedBuilder()
-                    .setColor(Colors.Blurple).setTitle('🤖 Wabot Help')
+                    .setColor(config.DISCORD.EMBED_COLOR).setTitle('🤖 Wabot Help')
                     .setDescription(`I can now automatically search Google and understand URLs to give you the best answers. Just ask me a question or include a link!`)
                     .addFields(
                         { name: '💬 Core Commands', value: '`help`: Shows this message.\n`ping`: Checks my response time.\n`reset`: Clears our conversation history.' },
@@ -81,12 +79,9 @@ export async function handleMessageCreate(message: Message) {
             }
             case 'show-my-data': {
                 const profile = UserProfileService.getProfile(message.author.id);
-                const embed = new EmbedBuilder().setColor(Colors.Blurple).setTitle(`${message.author.username}'s Profile Data`).setTimestamp();
+                const embed = new EmbedBuilder().setColor(config.DISCORD.EMBED_COLOR).setTitle(`${message.author.username}'s Profile Data`).setTimestamp();
                 embed.addFields({ name: 'Memory Status', value: `Memory is currently **${profile.memoryEnabled ? 'ON' : 'OFF'}**.` });
-
-                if (profile.tone) embed.addFields({ name: 'Custom Tone', value: profile.tone });
-                if (profile.persona) embed.addFields({ name: 'Custom Persona', value: profile.persona });
-
+                
                 const autoMemory = profile.automaticMemory && Object.keys(profile.automaticMemory).length > 0
                     ? Object.entries(profile.automaticMemory).map(([k, v]) => `• **${k}**: ${v}`).join('\n')
                     : '*None yet! Just keep chatting with me.*';
@@ -104,22 +99,19 @@ export async function handleMessageCreate(message: Message) {
                 await channel.sendTyping();
                 
                 let prompt = content;
-                
-                // Special command for 'review' which requires specific prompt formatting.
-                // The 'summarize' logic is removed as the model handles URLs automatically.
                 if (command === 'review') {
                     const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
-                    if (!codeBlockMatch) {
-                        await message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block (e.g., \\`\\`\\`js ... \\`\\`\\`).')] });
-                        return;
-                    }
-                    prompt = `Please provide a detailed review of the following code snippet. Analyze it for potential bugs, suggest improvements for performance and readability, and explain what the code does:\n\n${codeBlockMatch[0]}`;
+                    if (!codeBlockMatch) return message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block.')] });
+                    prompt = `Please provide a detailed review of the following code snippet:\n\n${codeBlockMatch[0]}`;
                 }
 
                 const history = ConversationService.getHistory(channel.id);
                 const userProfile = UserProfileService.getProfile(message.author.id);
-                const responseText = await GeminiService.generateResponse(history, prompt, userProfile);
+                
+                // *** CORRECTED FUNCTION CALL ***
+                const responseText = await GeminiService.generateResponse(prompt, userProfile, history);
 
+                // Add to history *after* getting the response
                 ConversationService.addMessageToHistory(channel.id, 'user', content);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
@@ -129,8 +121,7 @@ export async function handleMessageCreate(message: Message) {
                             if (memory) {
                                 UserProfileService.setAutomaticMemory(message.author.id, memory.key, memory.value);
                             }
-                        })
-                        .catch(console.error);
+                        });
                 }
 
                 const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
