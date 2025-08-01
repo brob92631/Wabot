@@ -33,7 +33,8 @@ ${existingMemories}
         const result = await genAI.models.generateContent({
             model: config.GEMINI_MODELS.flash,
             contents: [
-                { role: "system", parts: [{ text: systemPrompt }] },
+                // CORRECTED: Changed role from "system" to "user" as the API requires it.
+                { role: "user", parts: [{ text: systemPrompt }] },
                 { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
             ],
             // CORRECTED: Parameter is 'config', not 'generationConfig'
