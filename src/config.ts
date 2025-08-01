@@ -1,5 +1,5 @@
 // src/config.ts
-import { Content } from '@google/generative-ai';
+import { Content } from '@google/generative-ai'; // This type can still be used for history structure
 
 export const config = {
     // Bot settings
@@ -20,11 +20,10 @@ export const config = {
         }]
     } as Content,
 
-    // Gemini API settings
+    // Gemini API settings using modern model names
     GEMINI_MODELS: {
-        flash: 'gemini-2.5-flash',
-        pro: 'gemini-2.5-pro',
-        tts: 'a', // Note: Gemini doesn't support TTS directly
+        flash: 'gemini-2.5-flash', // Using latest flash model
+        pro: 'gemini-2.5-pro',     // Using latest pro model
     },
     
     TTS_VOICE: 'Zephyr',
