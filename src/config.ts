@@ -1,4 +1,5 @@
-// src/config.ts
+// Wabot-main/src/config.ts (Corrected)
+
 import { Content } from '@google/genai';
 
 export const config = {
@@ -23,7 +24,7 @@ export const config = {
 - Do not make your answers too long, if it is not required. 
 - Engage with users in a natural, conversational way.`
         }]
-        }]
+        // The extra "}]" that was here has been removed.
     } as Content,
     
     // Discord-specific configurations
