@@ -47,6 +47,16 @@ process.on('unhandledRejection', (error) => {
     console.error('Unhandled promise rejection:', error);
 });
 
+// Validate environment variables before login
+if (!process.env.DISCORD_BOT_TOKEN || !process.env.GEMINI_API_KEY) {
+    console.error("FATAL: Missing DISCORD_BOT_TOKEN or GEMINI_API_KEY in .env file. Please check your configuration.");
+    process.exit(1);
+}
+
+if (!process.env.GEMINI_SECONDARY_API_KEY) {
+    console.warn("WARN: GEMINI_SECONDARY_API_KEY is not set. The primary API key will be used for all features, which may impact primary rate limits.");
+}
+
 // Start the bot
 client.login(process.env.DISCORD_BOT_TOKEN).catch((error) => {
     console.error('Failed to login:', error);
