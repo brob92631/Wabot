@@ -1,17 +1,16 @@
 // src/services/gemini.service.ts
-
-import { GoogleGenerativeAI, Content, Part, Tool, StartChatParams } from '@google/genai';
+import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Initialize with the modern SDK
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+// Initialize the AI client with the correct class name
+const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY!);
 
-// Define the Google Search tool
+// Define Google Search grounding tool
 const googleSearchTool: Tool = { googleSearch: {} };
 
 /**
- * Analyzes a conversation to extract or update a persistent fact about the user.
+ * Extracts key information from conversation history for memory formation
  */
 export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ action: 'ADD' | 'UPDATE', key: string, value: string } | null> {
     const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
@@ -39,11 +38,10 @@ ${existingMemories}
         const text = result.response.text().trim();
 
         if (text === 'null' || !text.includes('::')) return null;
-
         const parts = text.split('::');
         if (parts.length !== 3) return null;
+        const [action, key, value] = parts.map((p: string) => p.trim());
 
-        const [action, key, value] = parts.map(p => p.trim());
         if ((action === 'ADD' || action === 'UPDATE') && key && value) {
             return { action: action as 'ADD' | 'UPDATE', key, value };
         }
@@ -55,59 +53,59 @@ ${existingMemories}
 }
 
 /**
- * Generates a text response from Gemini.
+ * Generates response using appropriate model based on query complexity
  */
-export async function generateResponse(history: Content[], query: string, userProfile: UserProfile): Promise<string> {
+export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
     try {
-        const modelName = getModelForQuery(query);
+        const modelName = getModelForQuery(prompt);
         const model = genAI.getGenerativeModel({ model: modelName });
-
-        let systemInstructionText = (config.SYSTEM_PROMPT.parts[0] as Part).text || '';
-        if (userProfile.memoryEnabled) {
-            if (userProfile.tone) systemInstructionText += `\n- Adopt a ${userProfile.tone} tone.`;
-            if (userProfile.persona) systemInstructionText += `\n- Act as a ${userProfile.persona}.`;
-            const autoMemory = userProfile.automaticMemory || {};
-            if (Object.keys(autoMemory).length > 0) {
-                systemInstructionText += `\n- Remember the following about the user:`;
-                for (const key in autoMemory) {
-                    systemInstructionText += `\n  - ${key}: ${autoMemory[key]}`;
-                }
-            }
+        const isComplexQuery = modelName === config.GEMINI_MODELS.pro;
+        
+        // Prepare conversation context
+        const history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
+        
+        // Add user profile context as the second-to-last user message
+        const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
+        if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
+            history.push({ role: 'user', parts: [{ text: profileText }] });
+            // Add a simple model part to keep the turn order correct
+            history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
         
-        const chatParams: StartChatParams = {
+        const chat = model.startChat({
             history,
-            systemInstruction: { role: 'system', parts: [{ text: systemInstructionText }] },
-        };
+            tools: isComplexQuery ? [googleSearchTool] : undefined,
+            generationConfig: config.GENERATION
+        });
 
-        // Only add tools if using the Pro model
-        if (modelName === config.GEMINI_MODELS.pro) {
-            chatParams.tools = [googleSearchTool];
-        }
-
-        const chat = model.startChat(chatParams);
-        const result = await chat.sendMessage(query);
-        const responseText = result.response.text();
-
-        return responseText.trim() || "I'm sorry, I couldn't generate a proper response.";
+        const result = await chat.sendMessage(prompt);
+        return result.response.text() || 'I apologize, but I was unable to generate a response at this time.';
     } catch (error) {
         console.error('Error generating response:', error);
-        if (error instanceof Error) {
-            if (error.message.includes('quota')) return "I'm experiencing high usage right now.";
-            if (error.message.includes('safety')) return "I can't respond to that due to my safety guidelines.";
-        }
-        return "I encountered a critical error. Please try again later.";
+        return 'I encountered an error while processing your request. Please try again.';
     }
 }
 
-function getModelForQuery(query: string): string {
+/**
+ * Determines which model to use based on query complexity and requirements
+ */
+export function getModelForQuery(query: string): string {
     const queryLower = query.toLowerCase();
-    const complexKeywords = ['code', 'explain', 'analyze', 'review', 'debate', 'what is', 'who is', 'how to', 'which is', 'which are'];
-    const hasUrl = /(https?:\/\/[^\s]+)/.test(query);
-
-    if (hasUrl || complexKeywords.some(keyword => queryLower.startsWith(keyword)) || query.length > 150) {
-        console.log("Switching to Pro model for complex query, URL, or grounding.");
+    const complexityIndicators = [
+        'analyze', 'research', 'compare', 'explain in detail', 'comprehensive',
+        'what are the latest', 'current events', 'recent news', 'up to date',
+        'search for', 'find information', 'look up', 'investigate',
+        'tell me about recent', 'what happened', 'latest updates'
+    ];
+    
+    const hasComplexityIndicator = complexityIndicators.some(indicator => queryLower.includes(indicator));
+    const isUrlProvided = /(https?:\/\/[^\s]+)/.test(query);
+    const isLongQuery = query.length > 150;
+    const hasQuestionWords = /\b(who|what|when|where|why|how)\b/i.test(queryLower);
+    
+    if (hasComplexityIndicator || isUrlProvided || (isLongQuery && hasQuestionWords)) {
         return config.GEMINI_MODELS.pro;
     }
+    
     return config.GEMINI_MODELS.flash;
 }
