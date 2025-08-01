@@ -95,28 +95,40 @@ export async function handleMessageCreate(message: Message) {
                 await message.reply({ embeds: [createSuccessEmbed('Your entire user profile has been cleared.')] });
                 break;
             }
+            case 'review': {
+                await channel.sendTyping();
+                const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
+                if (!codeBlockMatch || !codeBlockMatch[1]) {
+                    return message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block using triple backticks.')] });
+                }
+                const code = codeBlockMatch[0]; // The full block for context
+
+                const responseText = await GeminiService.generateCodeReview(code);
+
+                // No history management for isolated code reviews
+
+                const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
+                for (const chunk of chunks) {
+                    await message.reply(chunk);
+                }
+                break;
+            }
             default: {
                 await channel.sendTyping();
                 
-                let prompt = content;
-                if (command === 'review') {
-                    const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
-                    if (!codeBlockMatch) return message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block.')] });
-                    prompt = `Please provide a detailed review of the following code snippet:\n\n${codeBlockMatch[0]}`;
-                }
+                const prompt = content; // 'content' already has the command removed.
 
                 const history = ConversationService.getHistory(channel.id);
                 const userProfile = UserProfileService.getProfile(message.author.id);
                 
-                // *** CORRECTED FUNCTION CALL ***
                 const responseText = await GeminiService.generateResponse(prompt, userProfile, history);
 
                 // Add to history *after* getting the response
-                ConversationService.addMessageToHistory(channel.id, 'user', content);
+                ConversationService.addMessageToHistory(channel.id, 'user', prompt);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
                 if (userProfile.memoryEnabled) {
-                     GeminiService.extractMemoryFromConversation(content, userProfile)
+                     GeminiService.extractMemoryFromConversation(prompt, userProfile)
                         .then(memory => {
                             if (memory) {
                                 UserProfileService.setAutomaticMemory(message.author.id, memory.key, memory.value);
