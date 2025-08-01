@@ -4,7 +4,7 @@ import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
 // Initialize the AI client with the correct class name
-const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 // Define Google Search grounding tool
 const googleSearchTool: Tool = { googleSearch: {} };
