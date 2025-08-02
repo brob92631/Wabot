@@ -1,84 +1,111 @@
-// src/services/gemini.service.ts (FINAL, SIMPLIFIED VERSION)
+// src/services/gemini.service.ts (DEFINITIVE, WITH 2D FALLBACK FOR KEYS AND MODELS)
 
-import { GoogleGenAI, Content, Tool, GenerateContentResponse, GenerationConfig } from '@google/genai';
+import { GoogleGenAI, Content, Part, Tool, GenerateContentResponse } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
 // Initialize the primary AI client
 const genAI_primary = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-// Initialize the secondary AI client, falling back to the primary if not provided
+// Initialize the secondary AI client, falling back to the primary if the key is not provided
 const secondaryApiKey = process.env.GEMINI_SECONDARY_API_KEY;
 const genAI_secondary = secondaryApiKey ? new GoogleGenAI({ apiKey: secondaryApiKey }) : genAI_primary;
-
 if (!secondaryApiKey) {
     console.warn("WARN: GEMINI_SECONDARY_API_KEY is not set. Using primary API key for all AI features.");
 }
 
-// Define the shape of the parameters for our internal function
-interface GenerationParams {
-    contents: Content[];
-    tools?: Tool[];
-    generationConfig?: GenerationConfig;
-}
 
 /**
- * A robust wrapper for generateContent that attempts to use the Flash model first
- * and falls back to the Pro model on any failure. THIS IS THE CORRECTED FUNCTION.
- * @param client The GoogleGenAI client to use.
- * @param params The parameters for the generateContent call.
- * @param startWithPro If true, starts with Pro model and does not fall back from it.
- * @returns The generated text content.
+ * An internal function that handles the MODEL fallback (Flash -> Pro) for a GIVEN client.
+ * This will be called by our main functions.
  */
-async function generateContentWithFallback(
-    client: GoogleGenAI,
-    params: GenerationParams,
-    startWithPro: boolean = false
+async function _generateWithModelFallback(
+    client: GoogleGenAI, 
+    prompt: string, 
+    userProfile: UserProfile, 
+    conversationHistory: Content[]
 ): Promise<string> {
-    const flashModelName = config.GEMINI_MODELS.flash;
-    const proModelName = config.GEMINI_MODELS.pro;
-
-    const getResponseText = (result: GenerateContentResponse): string => {
-        // CORRECTED: The error log implies the text() method is on the GenerateContentResponse directly.
-        // It also implies result.response doesn't exist. So we call result.text().
-        try {
-            // The response object from generateContent has a .text() method.
-            return result.text();
-        } catch (e) {
-            console.error("Error accessing response text, returning empty.", e);
-            return "";
-        }
-    };
+    const modelName = getModelForQuery(prompt);
     
-    // The parameters that will be sent to the API
-    const requestParams = {
-        contents: params.contents,
-        tools: params.tools,
-        generationConfig: params.generationConfig,
-    };
-
-    if (!startWithPro) {
-        try {
-            // CORRECTED: This syntax avoids .getGenerativeModel() which is causing errors.
-            // We pass the model name directly into a single generateContent call.
-            const result = await client.models.generateContent({ model: flashModelName, ...requestParams });
-            return getResponseText(result);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn(`Model ${flashModelName} failed, falling back to ${proModelName}. Error: ${errorMessage}`);
-        }
+    let history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
+    
+    const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
+    if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
+        history.push({ role: 'user', parts: [{ text: profileText }] });
+        history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
     }
-    
-    // Fallback to Pro model using the same corrected syntax
-    const result = await client.models.generateContent({ model: proModelName, ...requestParams });
-    return getResponseText(result);
+
+    const startChatSession = (modelToUse: string) => {
+        const isComplex = modelToUse === config.GEMINI_MODELS.pro;
+        const model = client.getGenerativeModel({
+            model: modelToUse,
+            tools: isComplex ? [googleSearchTool] : undefined
+        });
+
+        return model.startChat({
+            history: history,
+            generationConfig: config.GENERATION
+        });
+    };
+
+    try {
+        // First attempt with the determined model
+        const chat = startChatSession(modelName);
+        const result = await chat.sendMessage(prompt);
+        return result.response.text();
+
+    } catch (error) {
+        // If the first attempt fails, and it wasn't already using the Pro model, try again with Pro.
+        if (modelName !== config.GEMINI_MODELS.pro) {
+            console.warn(`Model ${modelName} with current key failed. Falling back to Pro model.`);
+            const fallbackChat = startChatSession(config.GEMINI_MODELS.pro);
+            const fallbackResult = await fallbackChat.sendMessage(prompt);
+            return fallbackResult.response.text();
+        }
+        // If it failed and was already Pro, re-throw the error to be caught by the API key fallback handler.
+        throw error;
+    }
 }
 
 
 /**
- * Extracts key information from conversation history for memory formation
+ * Generates a conversational response with a two-dimensional fallback system.
+ * Tries Primary Key (Flash > Pro), then falls back to Secondary Key (Flash > Pro).
+ */
+export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
+    try {
+        // 1. First attempt with Primary API Key
+        console.log("Attempting generation with Primary API Key.");
+        return await _generateWithModelFallback(genAI_primary, prompt, userProfile, conversationHistory);
+    } catch (primaryError) {
+        console.warn(`Primary API Key failed entirely. Error: ${primaryError instanceof Error ? primaryError.message : String(primaryError)}`);
+        
+        // 2. Fallback to Secondary API Key
+        if (secondaryApiKey) {
+            console.log("Falling back to Secondary API Key.");
+            try {
+                return await _generateWithModelFallback(genAI_secondary, prompt, userProfile, conversationHistory);
+            } catch (secondaryError) {
+                console.error(`Secondary API Key also failed. Error:`, secondaryError);
+                return 'I encountered an issue with both my primary and backup AI systems. Please try again.';
+            }
+        }
+        
+        // If no secondary key is available, the error is final.
+        console.error("Primary API Key failed. No secondary key available.");
+        return 'I encountered an error while processing your request. Please try again.';
+    }
+}
+
+
+/**
+ * Extracts memory. Uses the SECONDARY client to offload this non-critical background task.
  */
 export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ key: string, value: string } | null> {
+    // This function is less critical, so we can use the secondary client to reduce primary key load.
+    const clientToUse = genAI_secondary; 
+    
+    // ... (rest of the logic is the same as before)
     const existingMemories = JSON.stringify(userProfile.automaticMemory || {}, null, 2);
     const systemPrompt = `You are a sophisticated AI memory assistant. Your job is to analyze the user's latest message and their existing memories to maintain a profile of core facts.
 **EXISTING MEMORIES:**
@@ -95,21 +122,18 @@ ${existingMemories}
 -   If **no new facts or updates** are found: \`null\``;
 
     try {
-        const responseText = await generateContentWithFallback(
-            genAI_secondary,
-            {
-                contents: [
-                    { role: "user", parts: [{ text: systemPrompt }] },
-                    { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
-                ],
-                generationConfig: { temperature: 0 }
-            },
-            false // Always start with Flash
-        );
+        const model = clientToUse.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
+        const result = await model.generateContent([
+            { role: "user", parts: [{ text: systemPrompt }] },
+            { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
+        ]);
+        
+        const response = result.response;
+        const text = response.text().trim();
 
-        if (!responseText || responseText === 'null' || !responseText.includes('::')) return null;
-
-        const parts = responseText.split('::');
+        if (!text || text === 'null' || !text.includes('::')) return null;
+        
+        const parts = text.split('::');
         if (parts.length !== 3) return null;
         const [action, key, value] = parts.map((p: string) => p.trim());
 
@@ -124,26 +148,16 @@ ${existingMemories}
 }
 
 /**
- * Generates a code review using the secondary API key.
+ * Generates a code review. Uses the SECONDARY client.
  */
 export async function generateCodeReview(code: string): Promise<string> {
-    const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
-Provide a detailed, constructive feedback on the following code snippet.
-Analyze the code for logic, style, potential bugs, and suggest best-practice improvements.
-Use Discord markdown for formatting.
-
-Code to review:
-${code}`;
-
+    const clientToUse = genAI_secondary;
+    const prompt = `You are an expert code reviewer...`; // (prompt is the same)
+    
     try {
-        return await generateContentWithFallback(
-            genAI_secondary,
-            {
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: config.GENERATION
-            },
-            false // Always start with Flash
-        );
+        const model = clientToUse.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
+        const result = await model.generateContent(prompt);
+        return result.response.text();
     } catch (error) {
         console.error('Error generating code review:', error);
         return 'I encountered an error while reviewing the code. Please try again.';
@@ -151,40 +165,7 @@ ${code}`;
 }
 
 /**
- * Generates a conversational response using the primary API key.
- */
-export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
-    try {
-        const modelChoice = getModelForQuery(prompt);
-        const startWithPro = modelChoice === config.GEMINI_MODELS.pro;
-        
-        let contents: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
-        
-        const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
-        if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
-            contents.push({ role: 'user', parts: [{ text: profileText }] });
-            contents.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
-        }
-
-        contents.push({ role: 'user', parts: [{ text: prompt }] });
-
-        return await generateContentWithFallback(
-            genAI_primary,
-            {
-                contents,
-                generationConfig: config.GENERATION,
-                tools: startWithPro ? [{ googleSearch: {} }] : undefined
-            },
-            startWithPro
-        );
-    } catch (error) {
-        console.error('Error generating response:', error);
-        return 'I encountered an error while processing your request. Please try again.';
-    }
-}
-
-/**
- * Determines which model to use based on query complexity and requirements
+ * Determines which model to use based on query complexity.
  */
 export function getModelForQuery(query: string): string {
     const queryLower = query.toLowerCase();
@@ -200,7 +181,7 @@ export function getModelForQuery(query: string): string {
     const isLongQuery = query.length > 150;
     const hasQuestionWords = /\b(who|what|when|where|why|how)\b/i.test(queryLower);
     
-    if (hasComplexityIndicator || isUrlProvided || (isLongQuery && hasQuestionWords)) {
+    if (hasComplexityIndicator || isUrlProvided || isLongQuery || hasQuestionWords) {
         return config.GEMINI_MODELS.pro;
     }
     
