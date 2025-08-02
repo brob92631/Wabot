@@ -1,6 +1,6 @@
-// src/services/gemini.service.ts (DEFINITIVE, CORRECTED VERSION for @google/genai v1.12.0+)
+// src/services/gemini.service.ts (DEFINITIVE, FINAL VERSION)
 
-import { GoogleGenAI, Content, Tool, GenerateContentResult, GenerationConfig } from '@google/genai';
+import { GoogleGenAI, Content, Tool, GenerateContentResponse, GenerationConfig } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
@@ -38,24 +38,25 @@ async function generateContentWithFallback(
     const flashModelName = config.GEMINI_MODELS.flash;
     const proModelName = config.GEMINI_MODELS.pro;
 
-    const getResponseText = (result: GenerateContentResult): string => {
-        // Updated to handle the modern response structure safely
+    const getResponseText = (result: GenerateContentResponse): string => {
         return result.response.text?.()?.trim() || '';
     };
 
     if (!startWithPro) {
         try {
-            const result = await client.getGenerativeModel({ model: flashModelName }).generateContent(params);
+            // Correct syntax for latest @google/genai
+            const model = client.getGenerativeModel({ model: flashModelName });
+            const result = await model.generateContent(params);
             return getResponseText(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             console.warn(`Model ${flashModelName} failed, falling back to ${proModelName}. Error: ${errorMessage}`);
-            // Fall through to try the Pro model
         }
     }
 
-    // This block is reached if startWithPro is true, or if the flash model failed.
-    const result = await client.getGenerativeModel({ model: proModelName }).generateContent(params);
+    // Correct syntax for latest @google/genai
+    const model = client.getGenerativeModel({ model: proModelName });
+    const result = await model.generateContent(params);
     return getResponseText(result);
 }
 
@@ -109,7 +110,6 @@ ${existingMemories}
 
 /**
  * Generates a code review using the secondary API key.
- * Uses a Flash -> Pro fallback.
  */
 export async function generateCodeReview(code: string): Promise<string> {
     const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
@@ -137,7 +137,6 @@ ${code}`;
 
 /**
  * Generates a conversational response using the primary API key.
- * Uses model routing (Flash or Pro) with a fallback from Flash to Pro if needed.
  */
 export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
     try {
