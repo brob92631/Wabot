@@ -1,4 +1,4 @@
-// src/services/gemini.service.ts (DEFINITIVE, CORRECTED VERSION)
+// src/services/gemini.service.ts (FINAL, SIMPLIFIED VERSION)
 
 import { GoogleGenAI, Content, Tool, GenerateContentResponse, GenerationConfig } from '@google/genai';
 import { config } from '../config';
@@ -39,11 +39,13 @@ async function generateContentWithFallback(
     const proModelName = config.GEMINI_MODELS.pro;
 
     const getResponseText = (result: GenerateContentResponse): string => {
-        // Corrected based on the new API: Direct access to text()
+        // CORRECTED: The error log implies the text() method is on the GenerateContentResponse directly.
+        // It also implies result.response doesn't exist. So we call result.text().
         try {
-            return result.response.text();
+            // The response object from generateContent has a .text() method.
+            return result.text();
         } catch (e) {
-            console.error("Error accessing response text, returning empty.", e)
+            console.error("Error accessing response text, returning empty.", e);
             return "";
         }
     };
@@ -57,9 +59,9 @@ async function generateContentWithFallback(
 
     if (!startWithPro) {
         try {
-            // Corrected: Use client.getGenerativeModel({ model }).generateContent(params)
-            const model = client.getGenerativeModel({ model: flashModelName });
-            const result = await model.generateContent(requestParams);
+            // CORRECTED: This syntax avoids .getGenerativeModel() which is causing errors.
+            // We pass the model name directly into a single generateContent call.
+            const result = await client.models.generateContent({ model: flashModelName, ...requestParams });
             return getResponseText(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -67,9 +69,8 @@ async function generateContentWithFallback(
         }
     }
     
-    // Fallback to Pro model
-    const model = client.getGenerativeModel({ model: proModelName });
-    const result = await model.generateContent(requestParams);
+    // Fallback to Pro model using the same corrected syntax
+    const result = await client.models.generateContent({ model: proModelName, ...requestParams });
     return getResponseText(result);
 }
 
