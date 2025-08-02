@@ -1,4 +1,4 @@
-// src/services/gemini.service.ts (DEFINITIVE, FINAL VERSION)
+// src/services/gemini.service.ts (DEFINITIVE, CORRECTED VERSION)
 
 import { GoogleGenAI, Content, Tool, GenerateContentResponse, GenerationConfig } from '@google/genai';
 import { config } from '../config';
@@ -24,7 +24,7 @@ interface GenerationParams {
 
 /**
  * A robust wrapper for generateContent that attempts to use the Flash model first
- * and falls back to the Pro model on any failure.
+ * and falls back to the Pro model on any failure. THIS IS THE CORRECTED FUNCTION.
  * @param client The GoogleGenAI client to use.
  * @param params The parameters for the generateContent call.
  * @param startWithPro If true, starts with Pro model and does not fall back from it.
@@ -39,26 +39,40 @@ async function generateContentWithFallback(
     const proModelName = config.GEMINI_MODELS.pro;
 
     const getResponseText = (result: GenerateContentResponse): string => {
-        return result.response.text?.()?.trim() || '';
+        // Corrected based on the new API: Direct access to text()
+        try {
+            return result.response.text();
+        } catch (e) {
+            console.error("Error accessing response text, returning empty.", e)
+            return "";
+        }
+    };
+    
+    // The parameters that will be sent to the API
+    const requestParams = {
+        contents: params.contents,
+        tools: params.tools,
+        generationConfig: params.generationConfig,
     };
 
     if (!startWithPro) {
         try {
-            // Correct syntax for latest @google/genai
+            // Corrected: Use client.getGenerativeModel({ model }).generateContent(params)
             const model = client.getGenerativeModel({ model: flashModelName });
-            const result = await model.generateContent(params);
+            const result = await model.generateContent(requestParams);
             return getResponseText(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             console.warn(`Model ${flashModelName} failed, falling back to ${proModelName}. Error: ${errorMessage}`);
         }
     }
-
-    // Correct syntax for latest @google/genai
+    
+    // Fallback to Pro model
     const model = client.getGenerativeModel({ model: proModelName });
-    const result = await model.generateContent(params);
+    const result = await model.generateContent(requestParams);
     return getResponseText(result);
 }
+
 
 /**
  * Extracts key information from conversation history for memory formation
