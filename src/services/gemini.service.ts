@@ -1,6 +1,6 @@
-// src/services/gemini.service.ts (DEFINITIVE, CORRECTED VERSION)
+// src/services/gemini.service.ts (DEFINITIVE, CORRECTED VERSION for @google/genai v1.12.0+)
 
-import { GoogleGenAI, Content, Tool, GenerateContentRequest } from '@google/genai';
+import { GoogleGenAI, Content, Tool, GenerateContentResult, GenerationConfig } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
@@ -15,8 +15,12 @@ if (!secondaryApiKey) {
     console.warn("WARN: GEMINI_SECONDARY_API_KEY is not set. Using primary API key for all AI features.");
 }
 
-// Define Google Search grounding tool
-const googleSearchTool: Tool = { googleSearch: {} };
+// Define the shape of the parameters for our internal function
+interface GenerationParams {
+    contents: Content[];
+    tools?: Tool[];
+    generationConfig?: GenerationConfig;
+}
 
 /**
  * A robust wrapper for generateContent that attempts to use the Flash model first
@@ -28,26 +32,31 @@ const googleSearchTool: Tool = { googleSearch: {} };
  */
 async function generateContentWithFallback(
     client: GoogleGenAI,
-    params: Omit<GenerateContentRequest, 'model'>,
+    params: GenerationParams,
     startWithPro: boolean = false
 ): Promise<string> {
-    const flashModel = config.GEMINI_MODELS.flash;
-    const proModel = config.GEMINI_MODELS.pro;
+    const flashModelName = config.GEMINI_MODELS.flash;
+    const proModelName = config.GEMINI_MODELS.pro;
+
+    const getResponseText = (result: GenerateContentResult): string => {
+        // Updated to handle the modern response structure safely
+        return result.response.text?.()?.trim() || '';
+    };
 
     if (!startWithPro) {
         try {
-            const result = await client.models.generateContent({ ...params, model: flashModel });
-            return result.text?.trim() || '';
+            const result = await client.getGenerativeModel({ model: flashModelName }).generateContent(params);
+            return getResponseText(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn(`Model ${flashModel} failed, falling back to ${proModel}. Error: ${errorMessage}`);
+            console.warn(`Model ${flashModelName} failed, falling back to ${proModelName}. Error: ${errorMessage}`);
             // Fall through to try the Pro model
         }
     }
 
     // This block is reached if startWithPro is true, or if the flash model failed.
-    const result = await client.models.generateContent({ ...params, model: proModel });
-    return result.text?.trim() || '';
+    const result = await client.getGenerativeModel({ model: proModelName }).generateContent(params);
+    return getResponseText(result);
 }
 
 /**
@@ -77,7 +86,7 @@ ${existingMemories}
                     { role: "user", parts: [{ text: systemPrompt }] },
                     { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
                 ],
-                config: { temperature: 0 }
+                generationConfig: { temperature: 0 }
             },
             false // Always start with Flash
         );
@@ -116,7 +125,7 @@ ${code}`;
             genAI_secondary,
             {
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                config: config.GENERATION
+                generationConfig: config.GENERATION
             },
             false // Always start with Flash
         );
@@ -149,8 +158,8 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
             genAI_primary,
             {
                 contents,
-                config: config.GENERATION,
-                tools: startWithPro ? [googleSearchTool] : undefined
+                generationConfig: config.GENERATION,
+                tools: startWithPro ? [{ googleSearch: {} }] : undefined
             },
             startWithPro
         );
