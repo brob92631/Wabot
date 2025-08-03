@@ -1,13 +1,13 @@
-// src/services/gemini.service.ts (DEFINITIVE, FINAL, CORRECTED VERSION)
+// src/services/gemini.service.ts (FINAL, CORRECTED VERSION)
 
-import { GoogleGenAI, Content, Part, Tool, GenerateContentResponse } from '@google/genai';
+import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Initialize the AI client
+// Initialize the AI client with the correct class name
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-// Define the tool at the top level so all functions can access it.
+// Define Google Search grounding tool
 const googleSearchTool: Tool = { googleSearch: {} };
 
 /**
@@ -30,14 +30,18 @@ ${existingMemories}
 -   If **no new facts or updates** are found: \`null\``;
 
     try {
-        const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
-        const result = await model.generateContent([
-            { role: "user", parts: [{ text: systemPrompt }] },
-            { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
-        ]);
+        const result = await genAI.models.generateContent({
+            model: config.GEMINI_MODELS.flash,
+            contents: [
+                { role: "user", parts: [{ text: systemPrompt }] },
+                { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
+            ],
+            generationConfig: { // Corrected from 'config' to 'generationConfig'
+                temperature: 0
+            }
+        });
         
         const text = result.response.text().trim();
-
         if (!text || text === 'null' || !text.includes('::')) return null;
         
         const parts = text.split('::');
@@ -45,7 +49,7 @@ ${existingMemories}
         const [action, key, value] = parts.map((p: string) => p.trim());
 
         if ((action === 'ADD' || action === 'UPDATE') && key && value) {
-            return { key, value };
+            return { key, value }; // Corrected to return a compatible object
         }
         return null;
     } catch (error) {
@@ -55,7 +59,7 @@ ${existingMemories}
 }
 
 /**
- * Generates a code review.
+ * FIX: Added the missing generateCodeReview function
  */
 export async function generateCodeReview(code: string): Promise<string> {
     const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
@@ -76,15 +80,16 @@ ${code}`;
     }
 }
 
+
 /**
- * Generates a conversational response using the chat interface.
+ * Generates response using appropriate model based on query complexity
  */
 export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
     try {
         const modelName = getModelForQuery(prompt);
         const isComplexQuery = modelName === config.GEMINI_MODELS.pro;
         
-        let history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
+        const history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
         
         const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
         if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
@@ -112,7 +117,7 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
 }
 
 /**
- * Determines which model to use based on query complexity.
+ * Determines which model to use based on query complexity and requirements
  */
 export function getModelForQuery(query: string): string {
     const queryLower = query.toLowerCase();
