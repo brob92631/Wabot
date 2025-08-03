@@ -1,4 +1,4 @@
-// src/handlers/messageCreate.handler.ts (FINAL, CORRECTED VERSION)
+// src/handlers/messageCreate.handler.ts (DEFINITIVE, BASED ON YOUR WORKING ZIP)
 
 import { Message, EmbedBuilder, Colors, TextChannel } from 'discord.js';
 import { config } from '../config';
@@ -95,7 +95,6 @@ export async function handleMessageCreate(message: Message) {
                 await message.reply({ embeds: [createSuccessEmbed('Your entire user profile has been cleared.')] });
                 break;
             }
-            // FIX: Added a dedicated 'review' command case
             case 'review': {
                 await channel.sendTyping();
                 const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
@@ -115,7 +114,6 @@ export async function handleMessageCreate(message: Message) {
             default: {
                 await channel.sendTyping();
                 
-                // Combine the "command" and the rest of the arguments to form the full prompt
                 const prompt = `${command} ${args.join(' ')}`.trim();
 
                 const history = ConversationService.getHistory(channel.id);
@@ -123,22 +121,18 @@ export async function handleMessageCreate(message: Message) {
                 
                 const responseText = await GeminiService.generateResponse(prompt, userProfile, history);
 
-                // Send the reply to the user first
                 const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
                 for (const chunk of chunks) {
                     await message.reply(chunk);
                 }
-
-                // Then, handle the background tasks sequentially
+                
                 ConversationService.addMessageToHistory(channel.id, 'user', prompt);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
-                // FIX: Use await to prevent a race condition where memory could be lost
                 if (userProfile.memoryEnabled) {
                     try {
                         const memory = await GeminiService.extractMemoryFromConversation(prompt, userProfile);
                         if (memory) {
-                            // Note: original zip had a bug here, it should be memory.key and memory.value
                             await UserProfileService.setAutomaticMemory(message.author.id, memory.key, memory.value);
                         }
                     } catch (error) {
