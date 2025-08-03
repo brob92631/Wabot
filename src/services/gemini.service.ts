@@ -11,27 +11,23 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const googleSearchTool: Tool = { googleSearch: {} };
 
 /**
- * A safe way to extract text from a Gemini response, accounting for the candidates array.
- */
-function getResponseText(response: GenerateContentResponse): string {
-    // The key insight: The text is inside the 'candidates' array.
-    if (response.candidates && response.candidates.length > 0) {
-        // Check for content to avoid errors on empty responses
-        if (response.candidates[0].content && response.candidates[0].content.parts.length > 0) {
-            return response.candidates[0].content.parts[0].text?.trim() || '';
-        }
-    }
-    console.warn("Gemini response was empty or had no candidates.");
-    return ''; // Return empty string if no valid text is found
-}
-
-
-/**
  * Extracts key information from conversation history for memory formation
  */
 export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ key: string, value: string } | null> {
     const existingMemories = JSON.stringify(userProfile.automaticMemory || {}, null, 2);
-    const systemPrompt = `You are a sophisticated AI memory assistant...`; // Same prompt
+    const systemPrompt = `You are a sophisticated AI memory assistant. Your job is to analyze the user's latest message and their existing memories to maintain a profile of core facts.
+**EXISTING MEMORIES:**
+${existingMemories}
+**YOUR TASK:**
+1.  **Identify New Facts:** Look for new, core, long-term facts about the user (name, job, core preferences, hometown).
+2.  **Identify Updates:** Check if the user is correcting or updating an existing memory.
+**RULES:**
+-   IGNORE temporary states ("I'm tired"), conversational filler, questions, or commands.
+-   Focus ONLY on explicit facts about the user.
+**OUTPUT FORMAT (IMPORTANT - CHOOSE ONE):**
+-   For a **new** memory: \`ADD::key::value\`
+-   For an **updated** memory: \`UPDATE::key::new_value\`
+-   If **no new facts or updates** are found: \`null\``;
 
     try {
         const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
@@ -40,7 +36,7 @@ export async function extractMemoryFromConversation(userQuery: string, userProfi
             { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
         ]);
         
-        const text = getResponseText(result.response);
+        const text = result.response.text().trim();
 
         if (!text || text === 'null' || !text.includes('::')) return null;
         
@@ -62,12 +58,18 @@ export async function extractMemoryFromConversation(userQuery: string, userProfi
  * Generates a code review.
  */
 export async function generateCodeReview(code: string): Promise<string> {
-    const prompt = `You are an expert code reviewer...`; // Same prompt
+    const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
+Provide a detailed, constructive feedback on the following code snippet.
+Analyze the code for logic, style, potential bugs, and suggest best-practice improvements.
+Use Discord markdown for formatting.
+
+Code to review:
+${code}`;
     
     try {
         const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
-        const result = await model.generateContent(prompt + `\n\n${code}`);
-        return getResponseText(result.response);
+        const result = await model.generateContent(prompt);
+        return result.response.text();
     } catch (error) {
         console.error('Error generating code review:', error);
         return 'I encountered an error while reviewing the code. Please try again.';
@@ -84,10 +86,9 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
         
         let history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
         
-        const profileText = `This is my user profile...`; // Same logic
+        const profileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
         if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
-            const fullProfileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
-            history.push({ role: 'user', parts: [{ text: fullProfileText }] });
+            history.push({ role: 'user', parts: [{ text: profileText }] });
             history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
 
@@ -103,7 +104,7 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
 
         const result = await chat.sendMessage(prompt);
         
-        return getResponseText(result.response);
+        return result.response.text();
     } catch (error) {
         console.error('Error generating response:', error);
         return 'I encountered an error while processing your request. Please try again.';
