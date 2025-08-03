@@ -6,6 +6,7 @@ import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
 import * as UserProfileService from '../services/userProfile.service';
+import * as ReviewService from '../services/review.service'; // <-- IMPORT THE NEW SERVICE
 
 const createSuccessEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ ${desc}`);
 const createErrorEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Red).setTitle('Error').setDescription(`❌ ${desc}`);
@@ -95,6 +96,7 @@ export async function handleMessageCreate(message: Message) {
                 await message.reply({ embeds: [createSuccessEmbed('Your entire user profile has been cleared.')] });
                 break;
             }
+            // DEDICATED 'review' COMMAND
             case 'review': {
                 await channel.sendTyping();
                 const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
@@ -103,7 +105,8 @@ export async function handleMessageCreate(message: Message) {
                 }
                 const code = codeBlockMatch[1]; 
 
-                const responseText = await GeminiService.generateCodeReview(code);
+                // USE THE NEW, CLEAN SERVICE
+                const responseText = await ReviewService.generateCodeReview(code);
 
                 const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
                 for (const chunk of chunks) {
@@ -129,6 +132,7 @@ export async function handleMessageCreate(message: Message) {
                 ConversationService.addMessageToHistory(channel.id, 'user', prompt);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
+                // FIX THE MEMORY RACE CONDITION
                 if (userProfile.memoryEnabled) {
                     try {
                         const memory = await GeminiService.extractMemoryFromConversation(prompt, userProfile);
