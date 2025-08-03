@@ -1,4 +1,4 @@
-// src/services/gemini.service.ts (FINAL, CORRECTED VERSION)
+// src/services/gemini.service.ts (DEFINITIVE, BASED ON YOUR WORKING ZIP)
 
 import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
 import { config } from '../config';
@@ -30,13 +30,14 @@ ${existingMemories}
 -   If **no new facts or updates** are found: \`null\``;
 
     try {
+        // Using the syntax from your original, working file
         const result = await genAI.models.generateContent({
             model: config.GEMINI_MODELS.flash,
             contents: [
                 { role: "user", parts: [{ text: systemPrompt }] },
                 { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
             ],
-            generationConfig: { // Corrected from 'config' to 'generationConfig'
+            generationConfig: {
                 temperature: 0
             }
         });
@@ -49,7 +50,7 @@ ${existingMemories}
         const [action, key, value] = parts.map((p: string) => p.trim());
 
         if ((action === 'ADD' || action === 'UPDATE') && key && value) {
-            return { key, value }; // Corrected to return a compatible object
+            return { key, value };
         }
         return null;
     } catch (error) {
@@ -59,7 +60,8 @@ ${existingMemories}
 }
 
 /**
- * FIX: Added the missing generateCodeReview function
+ * Generates a code review. This function was missing and is now added.
+ * It uses the same 'generateContent' pattern as the memory extraction.
  */
 export async function generateCodeReview(code: string): Promise<string> {
     const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
@@ -80,7 +82,6 @@ ${code}`;
     }
 }
 
-
 /**
  * Generates response using appropriate model based on query complexity
  */
@@ -97,11 +98,12 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
             history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
 
+        // Using the 'startChat' syntax from your original, working file
         const model = genAI.getGenerativeModel({
             model: modelName,
             tools: isComplexQuery ? [googleSearchTool] : undefined
         });
-
+        
         const chat = model.startChat({
             history: history,
             generationConfig: config.GENERATION
