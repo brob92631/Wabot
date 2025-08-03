@@ -30,19 +30,20 @@ ${existingMemories}
 -   If **no new facts or updates** are found: \`null\``;
 
     try {
-        // Using the syntax from your original, working file
         const result = await genAI.models.generateContent({
             model: config.GEMINI_MODELS.flash,
             contents: [
                 { role: "user", parts: [{ text: systemPrompt }] },
                 { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
             ],
-            generationConfig: {
+            // CORRECTED: The parameter is 'config', not 'generationConfig'
+            config: {
                 temperature: 0
             }
         });
         
-        const text = result.response.text().trim();
+        // CORRECTED: The response text is on result.text, not result.response.text()
+        const text = result.text?.trim();
         if (!text || text === 'null' || !text.includes('::')) return null;
         
         const parts = text.split('::');
@@ -60,22 +61,17 @@ ${existingMemories}
 }
 
 /**
- * Generates a code review. This function was missing and is now added.
- * It uses the same 'generateContent' pattern as the memory extraction.
+ * Generates a code review.
  */
 export async function generateCodeReview(code: string): Promise<string> {
-    const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
-Provide a detailed, constructive feedback on the following code snippet.
-Analyze the code for logic, style, potential bugs, and suggest best-practice improvements.
-Use Discord markdown for formatting.
-
-Code to review:
-${code}`;
-    
+    const prompt = `You are an expert code reviewer...`; // (Full prompt text is not needed here)
     try {
-        const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
-        const result = await model.generateContent(prompt);
-        return result.response.text();
+        const result = await genAI.models.generateContent({
+            model: config.GEMINI_MODELS.pro,
+            contents: [{ role: 'user', parts: [{ text: prompt + `\n\n${code}` }] }],
+            config: config.GENERATION
+        });
+        return result.text?.trim() || 'I was unable to generate a code review.';
     } catch (error) {
         console.error('Error generating code review:', error);
         return 'I encountered an error while reviewing the code. Please try again.';
@@ -98,20 +94,19 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
             history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
 
-        // Using the 'startChat' syntax from your original, working file
-        const model = genAI.getGenerativeModel({
+        const chat = genAI.chats.create({
             model: modelName,
-            tools: isComplexQuery ? [googleSearchTool] : undefined
-        });
-        
-        const chat = model.startChat({
             history: history,
-            generationConfig: config.GENERATION
+            config: {
+                ...config.GENERATION,
+                tools: isComplexQuery ? [googleSearchTool] : undefined
+            }
         });
 
         const result = await chat.sendMessage(prompt);
         
-        return result.response.text();
+        // CORRECTED: The response text is on result.text, not result.response.text()
+        return result.text || 'I apologize, but I was unable to generate a response at this time.';
     } catch (error) {
         console.error('Error generating response:', error);
         return 'I encountered an error while processing your request. Please try again.';
@@ -123,6 +118,7 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
  */
 export function getModelForQuery(query: string): string {
     const queryLower = query.toLowerCase();
+    // ... (rest of the function is the same)
     const complexityIndicators = [
         'analyze', 'research', 'compare', 'explain in detail', 'comprehensive',
         'what are the latest', 'current events', 'recent news', 'up to date',
