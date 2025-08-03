@@ -1,4 +1,4 @@
-// Wabot-main/src/config.ts (FINAL, CORRECTED VERSION)
+// Wabot-main/src/config.ts (DEFINITIVE, BASED ON YOUR WORKING ZIP)
 
 import { Content } from '@google/genai';
 
@@ -9,8 +9,8 @@ export const config = {
     
     // Gemini API settings using stable, recommended model names
     GEMINI_MODELS: {
-        flash: 'gemini-1.5-flash-latest',
-        pro: 'gemini-1.5-pro-latest'
+        flash: 'gemini-2.5-flash',
+        pro: 'gemini-2.5-pro'
     },
     
     // --- OPTIMIZED SYSTEM PROMPT (WITH ESCAPED BACKTICKS) ---
