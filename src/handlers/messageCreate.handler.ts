@@ -1,4 +1,4 @@
-// src/handlers/messageCreate.handler.ts (FINAL, CORRECTED VERSION)
+// src/handlers/messageCreate.handler.ts (DEFINITIVE, FINAL, CORRECTED VERSION)
 
 import { Message, EmbedBuilder, Colors, TextChannel } from 'discord.js';
 import { config } from '../config';
