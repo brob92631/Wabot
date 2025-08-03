@@ -1,4 +1,4 @@
-// src/services/gemini.service.ts (FINAL, CORRECTED VERSION)
+// src/services/gemini.service.ts (DEFINITIVE, FINAL, CORRECTED VERSION)
 
 import { GoogleGenAI, Content, Part, Tool, GenerateContentResponse } from '@google/genai';
 import { config } from '../config';
@@ -11,61 +11,37 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const googleSearchTool: Tool = { googleSearch: {} };
 
 /**
- * A robust, centralized function to generate content with a Flash-to-Pro fallback.
- * This is the core function that all other functions will now use.
- * It uses the client.models.generateContent() syntax to avoid the previous errors.
+ * A safe way to extract text from a Gemini response, accounting for the candidates array.
  */
-async function generateContentWithFallback(request: {
-    contents: Content[],
-    tools?: Tool[],
-    modelToUse?: 'flash' | 'pro'
-}): Promise<GenerateContentResponse> {
-    const modelName = request.modelToUse === 'pro' 
-        ? config.GEMINI_MODELS.pro 
-        : config.GEMINI_MODELS.flash;
-
-    try {
-        const result = await genAI.models.generateContent({
-            model: modelName,
-            contents: request.contents,
-            tools: request.tools,
-            generationConfig: config.GENERATION,
-        });
-        return result;
-    } catch (error) {
-        // If the first attempt fails and it wasn't already the Pro model, fallback to Pro.
-        if (modelName !== config.GEMINI_MODELS.pro) {
-            console.warn(`Model ${modelName} failed. Falling back to Pro model.`);
-            const fallbackResult = await genAI.models.generateContent({
-                model: config.GEMINI_MODELS.pro,
-                contents: request.contents,
-                tools: request.tools,
-                generationConfig: config.GENERATION,
-            });
-            return fallbackResult;
+function getResponseText(response: GenerateContentResponse): string {
+    // The key insight: The text is inside the 'candidates' array.
+    if (response.candidates && response.candidates.length > 0) {
+        // Check for content to avoid errors on empty responses
+        if (response.candidates[0].content && response.candidates[0].content.parts.length > 0) {
+            return response.candidates[0].content.parts[0].text?.trim() || '';
         }
-        // If it was already Pro, re-throw the error.
-        throw error;
     }
+    console.warn("Gemini response was empty or had no candidates.");
+    return ''; // Return empty string if no valid text is found
 }
+
 
 /**
  * Extracts key information from conversation history for memory formation
  */
 export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ key: string, value: string } | null> {
     const existingMemories = JSON.stringify(userProfile.automaticMemory || {}, null, 2);
-    const systemPrompt = `You are a sophisticated AI memory assistant...`; // (Full prompt text)
+    const systemPrompt = `You are a sophisticated AI memory assistant...`; // Same prompt
 
     try {
-        const result = await generateContentWithFallback({
-            contents: [
-                { role: "user", parts: [{ text: systemPrompt }] },
-                { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
-            ],
-            modelToUse: 'flash' // Always use flash for this simple task
-        });
+        const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.flash });
+        const result = await model.generateContent([
+            { role: "user", parts: [{ text: systemPrompt }] },
+            { role: "user", parts: [{ text: `Analyze the user's latest message now.\nUser's message: "${userQuery}"` }] }
+        ]);
         
-        const text = result.response.text().trim();
+        const text = getResponseText(result.response);
+
         if (!text || text === 'null' || !text.includes('::')) return null;
         
         const parts = text.split('::');
@@ -86,14 +62,12 @@ export async function extractMemoryFromConversation(userQuery: string, userProfi
  * Generates a code review.
  */
 export async function generateCodeReview(code: string): Promise<string> {
-    const prompt = `You are an expert code reviewer...`; // (Full prompt text)
+    const prompt = `You are an expert code reviewer...`; // Same prompt
     
     try {
-        const result = await generateContentWithFallback({
-            contents: [{ role: 'user', parts: [{ text: prompt + `\n\n${code}` }] }],
-            modelToUse: 'pro' // Always use pro for detailed reviews
-        });
-        return result.response.text();
+        const model = genAI.getGenerativeModel({ model: config.GEMINI_MODELS.pro });
+        const result = await model.generateContent(prompt + `\n\n${code}`);
+        return getResponseText(result.response);
     } catch (error) {
         console.error('Error generating code review:', error);
         return 'I encountered an error while reviewing the code. Please try again.';
@@ -105,24 +79,31 @@ export async function generateCodeReview(code: string): Promise<string> {
  */
 export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
     try {
-        const modelChoice = getModelForQuery(prompt);
+        const modelName = getModelForQuery(prompt);
+        const isComplexQuery = modelName === config.GEMINI_MODELS.pro;
         
-        let fullHistory: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
+        let history: Content[] = [config.SYSTEM_PROMPT, ...conversationHistory];
         
-        const profileText = `This is my user profile...`; // (Full prompt text)
+        const profileText = `This is my user profile...`; // Same logic
         if (userProfile.memoryEnabled && userProfile.automaticMemory && Object.keys(userProfile.automaticMemory).length > 0) {
-            fullHistory.push({ role: 'user', parts: [{ text: profileText }] });
-            fullHistory.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
+            const fullProfileText = `This is my user profile, use it for context: ${JSON.stringify(userProfile.automaticMemory, null, 2)}`;
+            history.push({ role: 'user', parts: [{ text: fullProfileText }] });
+            history.push({ role: 'model', parts: [{ text: "Got it. I'll keep that in mind." }] });
         }
-        fullHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
-        const result = await generateContentWithFallback({
-            contents: fullHistory,
-            tools: modelChoice === config.GEMINI_MODELS.pro ? [googleSearchTool] : undefined,
-            modelToUse: modelChoice === 'pro' ? 'pro' : 'flash'
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            tools: isComplexQuery ? [googleSearchTool] : undefined
         });
+
+        const chat = model.startChat({
+            history: history,
+            generationConfig: config.GENERATION
+        });
+
+        const result = await chat.sendMessage(prompt);
         
-        return result.response.text();
+        return getResponseText(result.response);
     } catch (error) {
         console.error('Error generating response:', error);
         return 'I encountered an error while processing your request. Please try again.';
