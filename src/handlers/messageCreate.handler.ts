@@ -56,7 +56,8 @@ export async function handleMessageCreate(message: Message) {
                 break;
             }
             case 'toggle-memory': {
-                const option = args?.toLowerCase();
+                // FIX: args is an array. Use args[0] to get the first element.
+                const option = args[0]?.toLowerCase();
                 if (option !== 'on' && option !== 'off') return message.reply({ embeds: [createErrorEmbed('Please specify `on` or `off`.')] });
                 await UserProfileService.setProfileData(message.author.id, { memoryEnabled: option === 'on' });
                 await message.reply({ embeds: [createSuccessEmbed(`Memory has been turned **${option.toUpperCase()}**.`)] });
@@ -98,10 +99,11 @@ export async function handleMessageCreate(message: Message) {
             case 'review': {
                 await channel.sendTyping();
                 const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
-                if (!codeBlockMatch || !codeBlockMatch) {
+                if (!codeBlockMatch || !codeBlockMatch[1]) {
                     return message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block using triple backticks.')] });
                 }
-                const code = codeBlockMatch; // Just the code, not the backticks
+                // FIX: Pass the captured group (the code string), not the whole match array.
+                const code = codeBlockMatch[1]; 
 
                 const responseText = await GeminiService.generateCodeReview(code);
 
@@ -114,7 +116,6 @@ export async function handleMessageCreate(message: Message) {
             default: {
                 await channel.sendTyping();
                 
-                // We now combine the command back with the args for a full prompt
                 const prompt = `${command} ${args.join(' ')}`.trim();
 
                 const history = ConversationService.getHistory(channel.id);
@@ -122,13 +123,11 @@ export async function handleMessageCreate(message: Message) {
                 
                 const responseText = await GeminiService.generateResponse(prompt, userProfile, history);
 
-                // Send reply first
                 const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
                 for (const chunk of chunks) {
                     await message.reply(chunk);
                 }
                 
-                // Then handle background tasks
                 ConversationService.addMessageToHistory(channel.id, 'user', prompt);
                 ConversationService.addMessageToHistory(channel.id, 'model', responseText);
                 
@@ -142,7 +141,6 @@ export async function handleMessageCreate(message: Message) {
                         console.error("Failed to extract or save memory:", error);
                     }
                 }
-
                 break;
             }
         }
