@@ -1,18 +1,26 @@
-// src/services/gemini.service.ts (Corrected and Merged)
+// src/services/gemini.service.ts (UPDATED)
 
-import { GoogleGenAI, Content, Part, Tool } from '@google/genai';
+import { GoogleGenAI, Content, Tool } from '@google/genai';
 import { config } from '../config';
 import { UserProfile } from './userProfile.service';
 
-// Initialize the AI client
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// --- KEY CHANGES START HERE ---
 
-// Define Google Search grounding tool
-const googleSearchTool: Tool = { googleSearch: {} };
+// Initialize the PRIMARY AI client for general chat and memory
+const primaryGenAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+// Initialize the SECONDARY AI client for specific tasks like code review
+// It falls back to the primary key if the secondary one is not provided.
+const secondaryGenAI = new GoogleGenAI({ 
+    apiKey: process.env.GEMINI_SECONDARY_API_KEY || process.env.GEMINI_API_KEY! 
+});
+
+// --- KEY CHANGES END HERE ---
+
 
 /**
  * Extracts key information from conversation history for memory formation.
- * Uses the stable API pattern from the old codebase.
+ * Uses the primary, general-purpose client.
  */
 export async function extractMemoryFromConversation(userQuery: string, userProfile: UserProfile): Promise<{ key: string, value: string } | null> {
     const existingMemories = JSON.stringify(userProfile.automaticMemory || {}, null, 2);
@@ -30,8 +38,8 @@ ${existingMemories}
 -   If **no new facts or updates** are found: \`null\``;
 
     try {
-        // Using the API pattern from the "stable" old code
-        const result = await genAI.models.generateContent({
+        // CHANGED: Uses the primary client
+        const result = await primaryGenAI.models.generateContent({
             model: config.GEMINI_MODELS.flash,
             contents: [
                 { role: "user", parts: [{ text: systemPrompt }] },
@@ -61,7 +69,7 @@ ${existingMemories}
 
 /**
  * Generates a dedicated code review.
- * This function is added to support the 'review' command cleanly.
+ * This function now uses the SECONDARY client to isolate its API usage.
  */
 export async function generateCodeReview(code: string): Promise<string> {
     const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
@@ -75,8 +83,8 @@ ${code}
 \`\`\``;
 
     try {
-        // Using the one-shot generation pattern
-        const result = await genAI.models.generateContent({
+        // CHANGED: Uses the secondary client
+        const result = await secondaryGenAI.models.generateContent({
             model: config.GEMINI_MODELS.pro, // Use the more powerful model for code
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: config.GENERATION
@@ -92,6 +100,7 @@ ${code}
 
 /**
  * Generates a conversational response using the chat-based API pattern.
+ * Uses the primary, general-purpose client.
  */
 export async function generateResponse(prompt: string, userProfile: UserProfile, conversationHistory: Content[] = []): Promise<string> {
     try {
@@ -106,13 +115,13 @@ export async function generateResponse(prompt: string, userProfile: UserProfile,
             history.push({ role: 'model', parts: [{ text: "Understood. I'll use this context for my response." }] });
         }
 
-        // Using the chat API pattern from the "stable" old code
-        const chat = genAI.chats.create({
+        // CHANGED: Uses the primary client
+        const chat = primaryGenAI.chats.create({
             model: modelName,
             history: history,
             config: {
                 ...config.GENERATION,
-                tools: isComplexQuery ? [googleSearchTool] : undefined
+                tools: isComplexQuery ? [{ googleSearch: {} }] : undefined
             }
         });
 
@@ -139,7 +148,6 @@ export function getModelForQuery(query: string): string {
         'tell me about recent', 'what happened', 'latest updates', 'review'
     ];
     
-    // The 'review' command or complex questions should use the Pro model.
     if (queryLower.startsWith('review')) {
         return config.GEMINI_MODELS.pro;
     }
