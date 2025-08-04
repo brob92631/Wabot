@@ -1,4 +1,4 @@
-// Wabot-main/src/services/userProfile.service.ts
+// Wabot-main/src/services/userProfile.service.ts (Corrected and Merged)
 
 import path from 'path';
 
@@ -41,6 +41,7 @@ export function getProfile(userId: string): UserProfile {
     }
     const profile = db.data.userProfiles[userId] || {};
     
+    // Set defaults if they don't exist
     if (profile.memoryEnabled === undefined) profile.memoryEnabled = true;
     if (!profile.automaticMemory) profile.automaticMemory = {};
 
@@ -59,15 +60,19 @@ export async function setProfileData(userId: string, data: Partial<UserProfile>)
 // Handles both adding and updating memories
 export async function setAutomaticMemory(userId: string, key: string, value: string) {
     const profile = getProfile(userId);
-    profile.automaticMemory![key] = value;
+    // This ensures automaticMemory exists before trying to assign to it
+    if (!profile.automaticMemory) {
+        profile.automaticMemory = {};
+    }
+    profile.automaticMemory[key] = value;
     await setProfileData(userId, { automaticMemory: profile.automaticMemory });
-    console.log(`Automatically set memory for user ${userId}: { ${key}: ${value} }`);
+    console.log(`Automatically set/updated memory for user ${userId}: { ${key}: ${value} }`);
 }
 
-// Removes a single memory
+// Removes a single memory by its key
 export async function removeMemory(userId: string, key: string): Promise<boolean> {
     const profile = getProfile(userId);
-    if (profile.automaticMemory && profile.automaticMemory[key]) {
+    if (profile.automaticMemory && profile.automaticMemory[key] !== undefined) {
         delete profile.automaticMemory[key];
         await db.write();
         return true;
@@ -75,11 +80,12 @@ export async function removeMemory(userId: string, key: string): Promise<boolean
     return false;
 }
 
-// New: Wipes all of a user's memories
+// ADDED: Wipes all of a user's learned memories, as used by the handler
 export async function clearAllMemory(userId: string) {
     const profile = getProfile(userId);
     if (profile) {
         profile.automaticMemory = {};
+        await setProfileData(userId, { automaticMemory: {} });
         await db.write();
     }
 }
