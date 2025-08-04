@@ -14,10 +14,17 @@ export async function generateCodeReview(code: string): Promise<string> {
     const prompt = `You are an expert code reviewer. Your personality is helpful and constructive.
 Provide a detailed, constructive feedback on the following code snippet.
 Analyze the code for logic, style, potential bugs, and suggest best-practice improvements.
-Use Discord markdown for formatting.
+
+FORMATTING REQUIREMENTS:
+- Use proper Discord markdown formatting
+- Wrap ALL code examples in proper code blocks with language specification
+- Use inline code formatting when referencing specific functions or variables
+- Structure your response with clear sections using headers
 
 Code to review:
-${code}`;
+\`\`\`
+${code}
+\`\`\``;
     
     try {
         // This uses the 'generateContent' method which we know works for single tasks
