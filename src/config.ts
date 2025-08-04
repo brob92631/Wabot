@@ -13,7 +13,6 @@ export const config = {
         pro: 'gemini-2.5-pro'
     },
     
-    // --- OPTIMIZED SYSTEM PROMPT (WITH ESCAPED BACKTICKS) ---
 SYSTEM_PROMPT: {
     role: 'user',
     parts: [{ 
