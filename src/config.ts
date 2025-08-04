@@ -14,8 +14,6 @@ export const config = {
     },
     
     // --- OPTIMIZED SYSTEM PROMPT (WITH ESCAPED BACKTICKS) ---
-    // Updated config.ts - SYSTEM_PROMPT section only
-
 SYSTEM_PROMPT: {
     role: 'user',
     parts: [{ 
