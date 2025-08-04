@@ -1,4 +1,4 @@
-// src/handlers/messageCreate.handler.ts (DEFINITIVE, CORRECTED VERSION)
+// src/handlers/messageCreate.handler.ts (Corrected and Merged)
 
 import { Message, EmbedBuilder, Colors, TextChannel } from 'discord.js';
 import { config } from '../config';
@@ -6,7 +6,6 @@ import { botState } from '../index';
 import * as ConversationService from '../services/conversation.service';
 import * as GeminiService from '../services/gemini.service';
 import * as UserProfileService from '../services/userProfile.service';
-import * as ReviewService from '../services/review.service'; // <-- IMPORT THE NEW SERVICE
 
 const createSuccessEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ ${desc}`);
 const createErrorEmbed = (desc: string) => new EmbedBuilder().setColor(Colors.Red).setTitle('Error').setDescription(`❌ ${desc}`);
@@ -96,7 +95,7 @@ export async function handleMessageCreate(message: Message) {
                 await message.reply({ embeds: [createSuccessEmbed('Your entire user profile has been cleared.')] });
                 break;
             }
-            // DEDICATED 'review' COMMAND
+            // NEW: Dedicated case for the 'review' command
             case 'review': {
                 await channel.sendTyping();
                 const codeBlockMatch = content.match(/```(?:\w*\n)?([\s\S]+)```/);
@@ -104,10 +103,10 @@ export async function handleMessageCreate(message: Message) {
                     return message.reply({ embeds: [createErrorEmbed('Please provide a code snippet in a code block using triple backticks.')] });
                 }
                 const code = codeBlockMatch[1]; 
-
-                // USE THE NEW, CLEAN SERVICE
-                const responseText = await ReviewService.generateCodeReview(code);
-
+                
+                // Call the new, dedicated service function
+                const responseText = await GeminiService.generateCodeReview(code);
+                
                 const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
                 for (const chunk of chunks) {
                     await message.reply(chunk);
@@ -117,36 +116,40 @@ export async function handleMessageCreate(message: Message) {
             default: {
                 await channel.sendTyping();
                 
-                const prompt = `${command} ${args.join(' ')}`.trim();
+                // The prompt is the original content now that 'review' is handled separately
+                const prompt = content;
 
                 const history = ConversationService.getHistory(channel.id);
                 const userProfile = UserProfileService.getProfile(message.author.id);
                 
                 const responseText = await GeminiService.generateResponse(prompt, userProfile, history);
 
+                // Add to history *before* sending the response to maintain order
+                ConversationService.addMessageToHistory(channel.id, 'user', content);
+                ConversationService.addMessageToHistory(channel.id, 'model', responseText);
+                
+                // Send the response
                 const chunks = responseText.match(/[\s\S]{1,2000}/g) || [];
                 for (const chunk of chunks) {
                     await message.reply(chunk);
                 }
                 
-                ConversationService.addMessageToHistory(channel.id, 'user', prompt);
-                ConversationService.addMessageToHistory(channel.id, 'model', responseText);
-                
-                // FIX THE MEMORY RACE CONDITION
+                // FIXED: Await the memory extraction to prevent race conditions
                 if (userProfile.memoryEnabled) {
-                    try {
-                        const memory = await GeminiService.extractMemoryFromConversation(prompt, userProfile);
+                     try {
+                        const memory = await GeminiService.extractMemoryFromConversation(content, userProfile);
                         if (memory) {
                             await UserProfileService.setAutomaticMemory(message.author.id, memory.key, memory.value);
                         }
-                    } catch (error) {
-                        console.error("Failed to extract or save memory:", error);
-                    }
+                     } catch(err) {
+                        console.error("Failed to extract or save memory:", err);
+                     }
                 }
                 break;
             }
         }
     } catch (error) {
         console.error("Fatal error in command router:", error);
+        message.reply({ embeds: [createErrorEmbed('A fatal error occurred. I have logged the details for my developer.')]});
     }
 }
