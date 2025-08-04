@@ -1,4 +1,4 @@
-// Wabot-main/src/config.ts (DEFINITIVE, CORRECTED VERSION)
+// Wabot-main/src/config.ts 
 
 import { Content } from '@google/genai';
 
